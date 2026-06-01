@@ -1,7 +1,8 @@
 import 'react-native-gesture-handler';
-import React from 'react';
+import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
+import { initDB } from './src/services/localStorage';
 
 // Screens
 import HomeScreen from './src/screens/HomeScreen';
@@ -13,6 +14,10 @@ import BenchmarkScreen from './src/screens/BenchmarkScreen';
 const Stack = createStackNavigator();
 
 export default function App() {
+  useEffect(() => {
+    initDB().catch(console.error);
+  }, []);
+
   return (
     <NavigationContainer>
       <Stack.Navigator 

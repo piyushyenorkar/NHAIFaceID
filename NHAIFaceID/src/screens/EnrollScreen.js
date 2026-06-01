@@ -88,15 +88,17 @@ export default function EnrollScreen({ navigation }) {
       {/* Top Input Form */}
       <View style={styles.formContainer}>
         <TextInput 
-          style={styles.input}
+          style={[styles.input, { color: '#000' }]}
           placeholder="Employee ID"
+          placeholderTextColor="#666"
           value={employeeId}
           onChangeText={setEmployeeId}
           editable={!isCapturing}
         />
         <TextInput 
-          style={styles.input}
+          style={[styles.input, { color: '#000' }]}
           placeholder="Full Name"
+          placeholderTextColor="#666"
           value={name}
           onChangeText={setName}
           editable={!isCapturing}

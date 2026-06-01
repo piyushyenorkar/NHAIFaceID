@@ -5,7 +5,7 @@
 
 import NetInfo from '@react-native-community/netinfo';
 import { getUnsyncedLogs, markLogsAsSynced, purgeLocalData } from './localStorage';
-import { CONFIG } from '../config';
+import { CONFIG } from '../config/config';
 
 class AWSSyncManager {
   constructor() {

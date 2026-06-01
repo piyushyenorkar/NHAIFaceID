@@ -2,10 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Animated } from 'react-native';
 import CameraView from '../components/CameraView';
 // import { generateEmbedding } from '../services/faceRecognition';
-// import { verifyMatch } from '../services/databaseService'; // Mocked
+import { getLatestEnrolledFace } from '../services/localStorage';
 
 export default function VerifyScreen({ navigation }) {
-  const [matchStatus, setMatchStatus] = useState('SEARCHING'); // SEARCHING, MATCHED, UNKNOWN
+  const [matchStatus, setMatchStatus] = useState('IDLE'); // IDLE, SEARCHING, MATCHED, UNKNOWN
   const [matchData, setMatchData] = useState(null);
   
   const confidenceAnim = useRef(new Animated.Value(0)).current;
@@ -19,12 +19,14 @@ export default function VerifyScreen({ navigation }) {
     // const result = await verifyMatch(embedding);
     
     // Mocking an authentication hit after 1.5s
-    setTimeout(() => {
-      // Mock result
+    setTimeout(async () => {
+      const latestFace = await getLatestEnrolledFace();
+      
+      // Mock result pulling the REAL latest enrolled user from SQLite
       const mockResult = {
-        matched: true,
-        employee_id: 'NHAI-2049',
-        name: 'Ramesh Kumar',
+        matched: latestFace ? true : false,
+        employee_id: latestFace ? latestFace.employee_id : 'Unknown',
+        name: latestFace ? latestFace.name : 'No Personnel Found',
         confidence: 94.7,
         time_ms: 680
       };
@@ -48,7 +50,7 @@ export default function VerifyScreen({ navigation }) {
 
   const resetSearch = () => {
     setMatchData(null);
-    setMatchStatus('SEARCHING');
+    setMatchStatus('IDLE');
     confidenceAnim.setValue(0);
   };
 
@@ -69,6 +71,15 @@ export default function VerifyScreen({ navigation }) {
       </View>
 
       <View style={styles.resultContainer}>
+        {matchStatus === 'IDLE' && (
+          <View style={styles.matchCard}>
+            <Text style={[styles.searchingText, {marginBottom: 30}]}>Ready to Verify</Text>
+            <TouchableOpacity style={styles.logBtn} onPress={() => setMatchStatus('SEARCHING')}>
+              <Text style={styles.logBtnText}>Scan My Face</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {matchStatus === 'SEARCHING' && (
           <Text style={styles.searchingText}>Searching database...</Text>
         )}

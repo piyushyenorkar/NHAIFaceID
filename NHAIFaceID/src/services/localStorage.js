@@ -18,52 +18,64 @@ export async function getDBConnection() {
 export async function initDB() {
   const db = await getDBConnection();
   
-  await db.transaction(async (tx) => {
-    // Table 1: enrolled_faces
-    await tx.executeSql(`
-      CREATE TABLE IF NOT EXISTS enrolled_faces (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        employee_id TEXT NOT NULL UNIQUE,
-        name TEXT NOT NULL,
-        embedding TEXT NOT NULL,
-        thumbnail_path TEXT,
-        enrolled_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        enrolled_by TEXT,
-        synced BOOLEAN DEFAULT 0
-      );
-    `);
+  // Table 1: enrolled_faces
+  await db.executeSql(`
+    CREATE TABLE IF NOT EXISTS enrolled_faces (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      embedding TEXT NOT NULL,
+      thumbnail_path TEXT,
+      enrolled_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      enrolled_by TEXT,
+      synced BOOLEAN DEFAULT 0
+    );
+  `);
 
-    // Table 2: verification_log
-    await tx.executeSql(`
-      CREATE TABLE IF NOT EXISTS verification_log (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        employee_id TEXT,
-        matched BOOLEAN,
-        confidence REAL,
-        liveness_passed BOOLEAN,
-        liveness_score REAL,
-        pipeline_ms INTEGER,
-        device_id TEXT,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-        synced BOOLEAN DEFAULT 0
-      );
-    `);
+  // Table 2: verification_log
+  await db.executeSql(`
+    CREATE TABLE IF NOT EXISTS verification_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id TEXT,
+      matched BOOLEAN,
+      confidence REAL,
+      liveness_passed BOOLEAN,
+      liveness_score REAL,
+      pipeline_ms INTEGER,
+      device_id TEXT,
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+      synced BOOLEAN DEFAULT 0
+    );
+  `);
 
-    // Table 3: sync_queue
-    await tx.executeSql(`
-      CREATE TABLE IF NOT EXISTS sync_queue (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        record_type TEXT,
-        record_id INTEGER,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        retry_count INTEGER DEFAULT 0,
-        last_error TEXT
-      );
-    `);
-  });
+  // Table 3: sync_queue
+  await db.executeSql(`
+    CREATE TABLE IF NOT EXISTS sync_queue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      record_type TEXT,
+      record_id INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      retry_count INTEGER DEFAULT 0,
+      last_error TEXT
+    );
+  `);
 
   console.log('[SQLite] Database and tables initialized successfully');
   return db;
+}
+
+export async function getLatestEnrolledFace() {
+  try {
+    const db = await getDBConnection();
+    const [results] = await db.executeSql(`SELECT employee_id, name FROM enrolled_faces ORDER BY id DESC LIMIT 1`);
+    if (results.rows.length > 0) {
+      return results.rows.item(0);
+    }
+    return null;
+  } catch (error) {
+    console.error(error);
+    return null;
+  }
 }
 
 export async function insertEnrolledFace(employeeId, name, embeddingArray) {

@@ -96,7 +96,7 @@ export default function BenchmarkScreen() {
           <Text style={styles.sectionTitle}>Accuracy</Text>
           <View style={styles.row}>
             <Text style={styles.label}>True Accept Rate:</Text>
-            <Text style={styles.valueGreen}>{results.accuracy.trueAccept}% (Target > 95%)</Text>
+            <Text style={styles.valueGreen}>{results.accuracy.trueAccept}% (Target &gt; 95%)</Text>
           </View>
           <View style={styles.row}>
             <Text style={styles.label}>False Reject Rate:</Text>

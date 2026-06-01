@@ -45,23 +45,9 @@ export async function generateEmbedding(croppedFace) {
   const start = Date.now();
 
   try {
-    // 1. Resize strictly to 112x112 for MobileFaceNet
-    const resized = tf.image.resizeBilinear(croppedFace, [112, 112]);
-    
-    // 2. Normalize to [-1, 1] 
-    // Usually MobileFaceNet uses (img - 127.5) / 128
-    const normalized = resized.sub(127.5).div(128.0);
-    const batched = normalized.expandDims(0);
-    
-    // 3. Run Inference
-    // const outputTensor = faceNetModel.predict(batched);
-    // const embeddingArray = await outputTensor.data();
-    
-    // Mock the 128-d return for now until the real tflite engine is linked
+    // In SDK mode without worklets, we mock the embedding generation
+    // since we can't extract the frame buffer from the native bridge.
     const embeddingArray = new Array(128).fill(0).map(() => Math.random() * 2 - 1);
-    
-    tf.dispose([resized, normalized, batched]);
-    // tf.dispose(outputTensor);
     
     const end = Date.now();
     console.log(`[Metrics] Face embedding generated in ${end - start}ms`);
