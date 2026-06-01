@@ -84,10 +84,42 @@ export function isSmile(landmarks, baseMouthWidth) {
 
   const currentMouthWidth = dist(leftCorner, rightCorner);
   
-  // Note: Y coordinates go down the screen, so moving "up" means a smaller Y value.
-  // In a real continuous challenge, we track the initial neutral Y.
-  // For the standalone formula: we check width increase first.
   const widthIncreased = currentMouthWidth > (baseMouthWidth * 1.15);
-  
   return widthIncreased;
+}
+
+/**
+ * Unified liveness challenge runner.
+ * @param {string} type - 'BLINK', 'TURN_LEFT', or 'SMILE'
+ * @param {Array} landmarks - 68 point array
+ * @param {Object} extraArgs - Contains faceWidth, faceCenterX, or baseMouthWidth
+ * @returns {Object} { passed: boolean, score: float }
+ */
+export function runLivenessChallenge(type, landmarks, extraArgs = {}) {
+  if (!landmarks || landmarks.length < 68) {
+    return { passed: false, score: 0 };
+  }
+
+  let passed = false;
+  let score = 0;
+
+  switch (type) {
+    case 'BLINK':
+      passed = isBlink(landmarks);
+      score = passed ? 100 : calculateEAR(landmarks) * 100;
+      break;
+    case 'TURN_LEFT':
+      passed = isHeadTurnedLeft(landmarks, extraArgs.faceCenterX, extraArgs.faceWidth);
+      // Mock score based on passing
+      score = passed ? 95.5 : 40.0;
+      break;
+    case 'SMILE':
+      passed = isSmile(landmarks, extraArgs.baseMouthWidth || dist(landmarks[48], landmarks[54]));
+      score = passed ? 98.2 : 50.0;
+      break;
+    default:
+      break;
+  }
+
+  return { passed, score };
 }

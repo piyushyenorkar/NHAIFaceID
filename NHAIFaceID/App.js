@@ -1,7 +1,9 @@
+import 'react-native-gesture-handler';
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 
+// Screens
 import HomeScreen from './src/screens/HomeScreen';
 import EnrollScreen from './src/screens/EnrollScreen';
 import LivenessScreen from './src/screens/LivenessScreen';
@@ -16,15 +18,19 @@ export default function App() {
       <Stack.Navigator 
         initialRouteName="Home"
         screenOptions={{
-          headerStyle: { backgroundColor: '#003087' },
-          headerTintColor: '#FFD700',
-          headerTitleStyle: { fontWeight: 'bold' },
+          headerStyle: {
+            backgroundColor: '#003087', // NHAI Blue
+          },
+          headerTintColor: '#FFD700', // NHAI Yellow
+          headerTitleStyle: {
+            fontWeight: 'bold',
+          },
         }}
       >
         <Stack.Screen 
           name="Home" 
           component={HomeScreen} 
-          options={{ title: 'Datalake 3.0 — Field Auth' }} 
+          options={{ title: 'Datalake 3.0', headerShown: false }} 
         />
         <Stack.Screen 
           name="Enroll" 

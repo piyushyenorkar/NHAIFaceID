@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert } from 'react-native';
 import CameraView from '../components/CameraView';
 import { generateEmbedding } from '../services/faceRecognition';
-// import { insertEnrolledFace } from '../services/databaseService'; // Mocked for UI phase
+import { insertEnrolledFace } from '../services/localStorage';
 
 export default function EnrollScreen({ navigation }) {
   const [employeeId, setEmployeeId] = useState('');
@@ -11,6 +11,9 @@ export default function EnrollScreen({ navigation }) {
   const [captureProgress, setCaptureProgress] = useState(0); // 0 to 5
   const [enrolled, setEnrolled] = useState(false);
 
+  // Store the 5 raw embeddings to average them
+  const embeddingsBuffer = useRef([]);
+
   const startEnrollment = () => {
     if (!employeeId.trim() || !name.trim()) {
       Alert.alert('Validation Error', 'Employee ID and Full Name are mandatory.');
@@ -18,23 +21,40 @@ export default function EnrollScreen({ navigation }) {
     }
     setIsCapturing(true);
     setCaptureProgress(0);
+    embeddingsBuffer.current = [];
   };
 
-  const handleFaceDetected = async (bbox, landmarks) => {
+  const handleFaceDetected = async (bbox, landmarks, frameTensor) => {
     if (!isCapturing || captureProgress >= 5) return;
 
-    // Simulate capturing 5 solid frames for embedding averaging
-    setCaptureProgress(prev => prev + 1);
-
-    if (captureProgress + 1 === 5) {
-      // Done capturing
-      setIsCapturing(false);
+    try {
+      // Mocked frame extraction - in reality we pass the frameTensor
+      const embedding = await generateEmbedding(frameTensor);
+      embeddingsBuffer.current.push(embedding);
       
-      // Mock embedding generation & saving
-      // const embedding = await generateEmbedding(frameTensor);
-      // await insertEnrolledFace(employeeId, name, embedding);
+      setCaptureProgress(prev => prev + 1);
 
-      setEnrolled(true);
+      if (embeddingsBuffer.current.length === 5) {
+        setIsCapturing(false);
+        
+        // Average the 5 embeddings (each is a 128-d array)
+        let masterEmbedding = new Array(128).fill(0);
+        for (let i = 0; i < 5; i++) {
+          for (let j = 0; j < 128; j++) {
+            masterEmbedding[j] += embeddingsBuffer.current[i][j];
+          }
+        }
+        for (let j = 0; j < 128; j++) {
+          masterEmbedding[j] = masterEmbedding[j] / 5;
+        }
+
+        // Save to SQLite
+        await insertEnrolledFace(employeeId, name, masterEmbedding);
+
+        setEnrolled(true);
+      }
+    } catch (err) {
+      console.error('Error extracting embedding', err);
     }
   };
 
@@ -51,6 +71,13 @@ export default function EnrollScreen({ navigation }) {
           onPress={() => navigation.navigate('Home')}
         >
           <Text style={styles.doneBtnText}>Return Home</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={styles.viewAllBtn} 
+          onPress={() => Alert.alert('Notice', 'Navigation to Enrolled List')}
+        >
+          <Text style={styles.viewAllBtnText}>View All Enrolled</Text>
         </TouchableOpacity>
       </View>
     );
@@ -190,9 +217,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     paddingVertical: 16,
     borderRadius: 8,
+    marginBottom: 16,
   },
   doneBtnText: {
     color: '#FFD700',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  viewAllBtn: {
+    backgroundColor: '#6c757d',
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    borderRadius: 8,
+  },
+  viewAllBtnText: {
+    color: '#FFF',
     fontSize: 18,
     fontWeight: 'bold',
   }
