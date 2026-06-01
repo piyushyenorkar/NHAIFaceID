@@ -1,6 +1,12 @@
-import React from 'react';
+import { registerTFJSPlatform } from './src/services/tfjsPlatform';
+registerTFJSPlatform();
+import React, { useEffect } from 'react';
+import { LogBox } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
+import NHAIFaceSDK from './src/NHAIFaceSDK';
+
+LogBox.ignoreLogs(['Failed to initialize local TFJS Face Detector']);
 
 import HomeScreen from './src/screens/HomeScreen';
 import EnrollScreen from './src/screens/EnrollScreen';
@@ -11,6 +17,9 @@ import BenchmarkScreen from './src/screens/BenchmarkScreen';
 const Stack = createStackNavigator();
 
 export default function App() {
+  useEffect(() => {
+    NHAIFaceSDK.initialize().catch(console.error);
+  }, []);
   return (
     <NavigationContainer>
       <Stack.Navigator 

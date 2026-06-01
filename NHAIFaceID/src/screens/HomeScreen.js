@@ -31,26 +31,18 @@ export default function HomeScreen({ navigation }) {
         <View style={styles.actionsContainer}>
           <TouchableOpacity 
             style={styles.card} 
+            onPress={() => navigation.navigate('Verify')}
+          >
+            <Text style={styles.cardIcon}>🔍</Text>
+            <Text style={styles.cardText}>Verify My Identity</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.card} 
             onPress={() => navigation.navigate('Enroll')}
           >
             <Text style={styles.cardIcon}>📝</Text>
             <Text style={styles.cardText}>Enroll New Personnel</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.card} 
-            onPress={() => navigation.navigate('Liveness')}
-          >
-            <Text style={styles.cardIcon}>👁️</Text>
-            <Text style={styles.cardText}>Run Liveness Check</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.card} 
-            onPress={() => navigation.navigate('Verify')}
-          >
-            <Text style={styles.cardIcon}>🔍</Text>
-            <Text style={styles.cardText}>Verify Identity</Text>
           </TouchableOpacity>
         </View>
 
@@ -77,14 +69,6 @@ export default function HomeScreen({ navigation }) {
           <Text style={styles.statusText}>Camera Ready: {systemStatus.cameraReady ? '✅' : '❌'}</Text>
           <Text style={styles.statusText}>Storage: {systemStatus.storageUsedMB} MB</Text>
         </View>
-
-        {/* Benchmark Hook */}
-        <TouchableOpacity 
-          style={styles.benchmarkBtn}
-          onPress={() => navigation.navigate('Benchmark')}
-        >
-          <Text style={styles.benchmarkText}>Run System Benchmark 📊</Text>
-        </TouchableOpacity>
 
       </ScrollView>
     </View>
