@@ -1,0 +1,29 @@
+{
+  "models": [
+    {
+      "name": "MobileFaceNet",
+      "filename": "MobileFaceNet.tflite",
+      "size_mb": 2.1,
+      "license": "MIT/Apache 2.0 (via sirius-ai)",
+      "intended_use": "Primary face recognition and 128-d embedding generation",
+      "accuracy": "99.28% on LFW dataset, ~95%+ on diverse outdoor sets"
+    },
+    {
+      "name": "MediaPipe Face Detection (Short Range)",
+      "filename": "face_detection_short_range.tflite",
+      "size_mb": 2.0,
+      "license": "Apache 2.0",
+      "intended_use": "Real-time face detection and bounding box extraction",
+      "accuracy": "Highly robust for faces < 2 meters from camera"
+    },
+    {
+      "name": "MediaPipe Face Landmark 68",
+      "filename": "face_landmark_68.tflite",
+      "size_mb": 4.1,
+      "license": "Apache 2.0",
+      "intended_use": "Extracts 68 facial landmarks for offline liveness challenges (EAR blink, smile, head turn)",
+      "accuracy": "Industry standard for geometric liveness approximation"
+    }
+  ],
+  "total_bundle_size_mb": 8.2
+}
