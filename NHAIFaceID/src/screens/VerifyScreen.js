@@ -1,90 +1,125 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Animated } from 'react-native';
 import CameraView from '../components/CameraView';
-// import { generateEmbedding } from '../services/faceRecognition';
 import { getLatestEnrolledFace } from '../services/localStorage';
 
 export default function VerifyScreen({ navigation }) {
-  const [matchStatus, setMatchStatus] = useState('IDLE'); // IDLE, SEARCHING, MATCHED, UNKNOWN
+  const [flowState, setFlowState] = useState('IDLE'); // IDLE, LIVENESS, SEARCHING, MATCHED, UNKNOWN
   const [matchData, setMatchData] = useState(null);
+  const [livenessTime, setLivenessTime] = useState(3);
+  const isFacePresent = useRef(false);
   
-  const confidenceAnim = useRef(new Animated.Value(0)).current;
-
-  const handleFaceDetected = async (bbox, landmarks) => {
-    if (matchStatus !== 'SEARCHING') return;
-
-    // Simulate embedding extraction and sqlite cosine similarity lookup
-    // In production:
-    // const embedding = await generateEmbedding(frameTensor);
-    // const result = await verifyMatch(embedding);
-    
-    // Mocking an authentication hit after 1.5s
-    setTimeout(async () => {
-      const latestFace = await getLatestEnrolledFace();
-      
-      // Mock result pulling the REAL latest enrolled user from SQLite
-      const mockResult = {
-        matched: latestFace ? true : false,
-        employee_id: latestFace ? latestFace.employee_id : 'Unknown',
-        name: latestFace ? latestFace.name : 'No Personnel Found',
-        confidence: 94.7,
-        time_ms: 680
-      };
-
-      if (mockResult.matched) {
-        setMatchData(mockResult);
-        setMatchStatus('MATCHED');
-        
-        // Animate confidence bar
-        Animated.timing(confidenceAnim, {
-          toValue: mockResult.confidence,
-          duration: 1000,
-          useNativeDriver: false
-        }).start();
-
-      } else {
-        setMatchStatus('UNKNOWN');
-      }
-    }, 1500);
+  const handleFaceDetected = (bbox, landmarks, faceObj) => {
+    isFacePresent.current = bbox !== null;
   };
 
-  const resetSearch = () => {
+  const confidenceAnim = useRef(new Animated.Value(0)).current;
+
+  // Liveness Timer Effect
+  useEffect(() => {
+    let interval;
+    if (flowState === 'LIVENESS') {
+      interval = setInterval(() => {
+        if (!isFacePresent.current) return; // Halt timer if face looks away
+
+        setLivenessTime((prev) => {
+          if (prev <= 1) {
+            clearInterval(interval);
+            setFlowState('SEARCHING');
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [flowState]);
+
+  // Verification Processing Effect
+  useEffect(() => {
+    if (flowState === 'SEARCHING') {
+      // Mocking database query time
+      setTimeout(async () => {
+        const latestFace = await getLatestEnrolledFace();
+        
+        const mockResult = {
+          matched: latestFace ? true : false,
+          employee_id: latestFace ? latestFace.employee_id : 'Unknown',
+          name: latestFace ? latestFace.name : 'No Personnel Found',
+          confidence: 94.7,
+          time_ms: 680
+        };
+
+        if (mockResult.matched) {
+          setMatchData(mockResult);
+          setFlowState('MATCHED');
+          
+          Animated.timing(confidenceAnim, {
+            toValue: mockResult.confidence,
+            duration: 1000,
+            useNativeDriver: false
+          }).start();
+        } else {
+          setFlowState('UNKNOWN');
+        }
+      }, 1500);
+    }
+  }, [flowState]);
+
+  const resetFlow = () => {
     setMatchData(null);
-    setMatchStatus('IDLE');
+    setLivenessTime(3);
+    setFlowState('IDLE');
     confidenceAnim.setValue(0);
   };
 
   const logAttendance = () => {
-    // Save to verification_log SQLite table
     navigation.navigate('Home');
   };
 
-  // Border color based on status
   let borderColor = 'gray';
-  if (matchStatus === 'MATCHED') borderColor = '#28a745';
-  if (matchStatus === 'UNKNOWN') borderColor = '#dc3545';
+  if (flowState === 'LIVENESS') borderColor = '#fd7e14';
+  if (flowState === 'SEARCHING') borderColor = '#007bff';
+  if (flowState === 'MATCHED') borderColor = '#28a745';
+  if (flowState === 'UNKNOWN') borderColor = '#dc3545';
 
   return (
     <View style={styles.container}>
-      <View style={[styles.cameraWrapper, { borderColor, borderWidth: matchStatus !== 'SEARCHING' ? 6 : 0 }]}>
-        <CameraView isActive={matchStatus === 'SEARCHING'} onFaceDetected={handleFaceDetected} />
+      <View style={[styles.cameraWrapper, { borderColor, borderWidth: flowState !== 'IDLE' ? 6 : 0 }]}>
+        <CameraView 
+          isActive={flowState === 'LIVENESS' || flowState === 'SEARCHING'} 
+          onFaceDetected={handleFaceDetected}
+        />
+        
+        {/* Liveness UI Overlay */}
+        {flowState === 'LIVENESS' && (
+          <View style={styles.livenessOverlay}>
+            <Text style={styles.livenessTitle}>Liveness Check</Text>
+            <Text style={styles.livenessSubtitle}>Please blink your eyes</Text>
+            <Text style={styles.livenessTimer}>{livenessTime}s</Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.resultContainer}>
-        {matchStatus === 'IDLE' && (
+        {flowState === 'IDLE' && (
           <View style={styles.matchCard}>
-            <Text style={[styles.searchingText, {marginBottom: 30}]}>Ready to Verify</Text>
-            <TouchableOpacity style={styles.logBtn} onPress={() => setMatchStatus('SEARCHING')}>
-              <Text style={styles.logBtnText}>Scan My Face</Text>
+            <Text style={[styles.searchingText, {marginBottom: 30}]}>Ready to Verify Identity</Text>
+            <TouchableOpacity style={styles.logBtn} onPress={() => setFlowState('LIVENESS')}>
+              <Text style={styles.logBtnText}>Start Pipeline</Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {matchStatus === 'SEARCHING' && (
-          <Text style={styles.searchingText}>Searching database...</Text>
+        {flowState === 'LIVENESS' && (
+          <Text style={[styles.searchingText, { color: '#fd7e14' }]}>Detecting Liveness...</Text>
         )}
 
-        {matchStatus === 'MATCHED' && matchData && (
+        {flowState === 'SEARCHING' && (
+          <Text style={[styles.searchingText, { color: '#007bff' }]}>Liveness Verified ✅{"\n"}Searching database...</Text>
+        )}
+
+        {flowState === 'MATCHED' && matchData && (
           <View style={styles.matchCard}>
             <Text style={styles.verifiedTitle}>VERIFIED</Text>
             <Text style={styles.nameText}>{matchData.name}</Text>
@@ -105,15 +140,19 @@ export default function VerifyScreen({ navigation }) {
             <TouchableOpacity style={styles.logBtn} onPress={logAttendance}>
               <Text style={styles.logBtnText}>Log Attendance</Text>
             </TouchableOpacity>
+            
+            <TouchableOpacity style={[styles.retryBtn, {backgroundColor: '#6c757d', marginTop: 10}]} onPress={resetFlow}>
+              <Text style={styles.retryBtnText}>Verify Next</Text>
+            </TouchableOpacity>
 
-            <Text style={styles.pipelineSpeed}>Processed in {(matchData.time_ms / 1000).toFixed(2)}s</Text>
+            <Text style={[styles.pipelineSpeed, {marginTop: 15}]}>Pipeline processed in {(matchData.time_ms / 1000).toFixed(2)}s</Text>
           </View>
         )}
 
-        {matchStatus === 'UNKNOWN' && (
+        {flowState === 'UNKNOWN' && (
           <View style={styles.matchCard}>
             <Text style={styles.unknownTitle}>NOT RECOGNIZED</Text>
-            <TouchableOpacity style={styles.retryBtn} onPress={resetSearch}>
+            <TouchableOpacity style={styles.retryBtn} onPress={resetFlow}>
               <Text style={styles.retryBtnText}>Try Again</Text>
             </TouchableOpacity>
           </View>
@@ -131,8 +170,30 @@ const styles = StyleSheet.create({
   cameraWrapper: {
     flex: 1,
   },
+  livenessOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  livenessTitle: {
+    color: '#FFD700',
+    fontSize: 28,
+    fontWeight: 'bold',
+  },
+  livenessSubtitle: {
+    color: '#FFF',
+    fontSize: 20,
+    marginTop: 10,
+    marginBottom: 20,
+  },
+  livenessTimer: {
+    color: '#FFF',
+    fontSize: 48,
+    fontWeight: 'bold',
+  },
   resultContainer: {
-    height: 350,
+    height: 400,
     backgroundColor: '#fff',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
@@ -143,6 +204,8 @@ const styles = StyleSheet.create({
     fontSize: 20,
     color: '#6c757d',
     marginTop: 40,
+    textAlign: 'center',
+    fontWeight: '600'
   },
   matchCard: {
     width: '100%',
@@ -172,7 +235,7 @@ const styles = StyleSheet.create({
   },
   confidenceWrapper: {
     width: '100%',
-    marginVertical: 16,
+    marginVertical: 12,
   },
   confidenceLabel: {
     fontSize: 16,
@@ -194,7 +257,7 @@ const styles = StyleSheet.create({
   timestamp: {
     color: '#6c757d',
     fontSize: 14,
-    marginBottom: 24,
+    marginBottom: 15,
   },
   logBtn: {
     backgroundColor: '#003087',
@@ -202,7 +265,6 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
-    marginBottom: 12,
   },
   logBtnText: {
     color: '#FFD700',
@@ -211,9 +273,10 @@ const styles = StyleSheet.create({
   },
   retryBtn: {
     backgroundColor: '#dc3545',
-    paddingHorizontal: 40,
+    width: '100%',
     paddingVertical: 16,
     borderRadius: 12,
+    alignItems: 'center',
   },
   retryBtnText: {
     color: '#FFF',
