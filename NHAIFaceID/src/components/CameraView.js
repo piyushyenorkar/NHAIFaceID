@@ -1,11 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, Text, View, Dimensions } from 'react-native';
-import { Camera, useCameraDevice } from 'react-native-vision-camera';
-
-// Note: In a full React Native environment, running JS models synchronously on 30fps frames
-// often requires a Vision Camera Frame Processor plugin (e.g. vision-camera-face-detector).
-// For the SDK, we simulate the frame processing bridge to the tfjs/mediapipe models.
-import { detectFace } from '../services/faceDetection'; 
+import { Camera, useCameraDevice, useFrameProcessor, runAsync } from 'react-native-vision-camera';
+import { useFaceDetector } from 'react-native-vision-camera-face-detector';
+import { Worklets } from 'react-native-worklets-core';
 
 const { width, height } = Dimensions.get('window');
 
@@ -26,9 +23,6 @@ export default function CameraView({ onFaceDetected, isActive = true }) {
     fps: 0
   });
 
-  const lastFrameTime = useRef(Date.now());
-  const frameCount = useRef(0);
-
   useEffect(() => {
     (async () => {
       const status = await Camera.requestCameraPermission();
@@ -36,36 +30,50 @@ export default function CameraView({ onFaceDetected, isActive = true }) {
     })();
   }, []);
 
-  // Since react-native-worklets-core is uninstalled to save 30-min build times, 
-  // we mock the frame loop in JS instead of C++ for the hackathon UI.
-  useEffect(() => {
-    if (!isActive) return;
-    const interval = setInterval(() => {
-      // 1. Calculate FPS
-      const now = Date.now();
-      frameCount.current += 1;
-      let currentFps = boxState.fps;
+  // MLKit Face Detector Initialization
+  const faceDetector = useFaceDetector({
+    performanceMode: 'fast',
+    runContours: false,
+    runClassifications: true,
+    runLandmarks: false,
+    trackingEnabled: false,
+  });
+
+  // Bridge to send face data from the native C++ thread back to JavaScript UI
+  const handleFacesOnJS = Worklets.createRunOnJS((faces) => {
+    if (faces && faces.length > 0) {
+      const face = faces[0];
+      setBoxState({ 
+        color: '#00FF00', 
+        message: 'Face detected - Hold still', 
+        box: {
+          x: face.bounds.x, 
+          y: face.bounds.y, 
+          w: face.bounds.width, 
+          h: face.bounds.height
+        }, 
+        fps: 30 
+      });
       
-      if (now - lastFrameTime.current >= 1000) {
-        currentFps = frameCount.current * 30; // Mocking 30fps
-        frameCount.current = 0;
-        lastFrameTime.current = now;
+      if (onFaceDetectedRef.current) {
+        onFaceDetectedRef.current(face.bounds, null, face);
       }
+    } else {
+      setBoxState({ 
+        color: 'gray', 
+        message: 'Position your face in the frame', 
+        box: null, 
+        fps: 30 
+      });
+    }
+  });
 
-      // 2. Mock Face Detection Logic
-      setBoxState({ color: '#00FF00', message: 'Face detected - Hold still', box: {x: width * 0.2, y: height * 0.25, w: width * 0.6, h: height * 0.4}, fps: currentFps });
-      
-      // Fire mock detection event twice a second to simulate processing
-      if (frameCount.current % 15 === 0) {
-        if (onFaceDetectedRef.current) onFaceDetectedRef.current({x: 100, y: 100, w: 200, h: 200}, null, null);
-      }
-      
-    }, 33); // ~30fps loop
-
-    return () => clearInterval(interval);
-  }, [isActive]);
-
-
+  // Native C++ Frame Processor (runs at 60fps)
+  const frameProcessor = useFrameProcessor((frame) => {
+    'worklet';
+    const faces = faceDetector.detectFaces(frame);
+    handleFacesOnJS(faces);
+  }, [faceDetector, handleFacesOnJS]);
 
   if (!hasPermission) return <Text style={styles.errorText}>Camera permission denied.</Text>;
   if (device == null) return <Text style={styles.errorText}>No front camera found.</Text>;
@@ -76,9 +84,11 @@ export default function CameraView({ onFaceDetected, isActive = true }) {
         style={StyleSheet.absoluteFill}
         device={device}
         isActive={isActive}
+        frameProcessor={frameProcessor}
+        frameProcessorFps={15} // Cap detection at 15fps to save battery
       />
       
-      {/* High Contrast Bounding Box Overlay */}
+      {/* Dynamic Bounding Box Overlay */}
       {boxState.box && (
         <View style={[
           styles.boundingBox, 
@@ -98,11 +108,6 @@ export default function CameraView({ onFaceDetected, isActive = true }) {
           {boxState.message}
         </Text>
       </View>
-
-      {/* FPS Counter in corner */}
-      <View style={styles.fpsCounter}>
-        <Text style={styles.fpsText}>{boxState.fps} FPS</Text>
-      </View>
     </View>
   );
 }
@@ -114,48 +119,27 @@ const styles = StyleSheet.create({
   },
   boundingBox: {
     position: 'absolute',
-    borderWidth: 4,
+    borderWidth: 3,
     borderRadius: 12,
-    backgroundColor: 'transparent',
-    // High contrast shadow for outdoor visibility
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.8,
-    shadowRadius: 4,
+    borderStyle: 'dashed',
+    backgroundColor: 'rgba(0, 255, 0, 0.1)',
   },
   textOverlay: {
     position: 'absolute',
-    bottom: 50,
+    bottom: 30,
     width: '100%',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 48, 135, 0.7)', // NHAI Blue with opacity
-    paddingVertical: 12,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingVertical: 10,
   },
   guidanceText: {
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: 'bold',
-    textAlign: 'center',
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: { width: -1, height: 1 },
-    textShadowRadius: 10,
-  },
-  fpsCounter: {
-    position: 'absolute',
-    top: 40,
-    right: 20,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    padding: 6,
-    borderRadius: 4,
-  },
-  fpsText: {
-    color: '#00FF00', // Bright green for benchmark
-    fontWeight: 'bold',
-    fontSize: 14,
   },
   errorText: {
     color: 'red',
-    fontSize: 18,
+    fontSize: 16,
     textAlign: 'center',
-    marginTop: '50%',
+    marginTop: 50,
   }
 });

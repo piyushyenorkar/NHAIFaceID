@@ -26,6 +26,7 @@ export default function EnrollScreen({ navigation }) {
 
   const handleFaceDetected = async (bbox, landmarks, frameTensor) => {
     if (!isCapturing || captureProgress >= 5) return;
+    if (!bbox) return; // Must have a physical face bounding box
 
     try {
       // Mocked frame extraction - in reality we pass the frameTensor
