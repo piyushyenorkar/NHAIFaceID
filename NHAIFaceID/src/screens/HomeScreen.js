@@ -74,6 +74,14 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.cardIcon}>📝</Text>
             <Text style={styles.cardText}>Enroll New Personnel</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.card, styles.devCard]} 
+            onPress={() => navigation.navigate('UserList')}
+          >
+            <Text style={styles.cardIcon}>💻</Text>
+            <Text style={styles.cardText}>Developer Database Viewer</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Live Stats Row */}
@@ -154,6 +162,11 @@ const styles = StyleSheet.create({
     color: '#FFD700',
     fontSize: 20,
     fontWeight: 'bold',
+  },
+  devCard: {
+    backgroundColor: '#343a40',
+    borderColor: '#FFD700',
+    borderWidth: 1.5,
   },
   statsRow: {
     flexDirection: 'row',

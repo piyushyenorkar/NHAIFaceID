@@ -1,8 +1,8 @@
 buildscript {
     ext {
-        buildToolsVersion = "34.0.0"
+        buildToolsVersion = "35.0.0"
         minSdkVersion = 26
-        compileSdkVersion = 34
+        compileSdkVersion = 35
         targetSdkVersion = 34
         ndkVersion = "26.1.10909125"
         kotlinVersion = "1.9.22"
@@ -23,7 +23,7 @@ apply plugin: "com.facebook.react.rootproject"
 allprojects {
     configurations.all {
         resolutionStrategy {
-            force 'com.microsoft.onnxruntime:onnxruntime-android:1.17.1'
+            force 'com.microsoft.onnxruntime:onnxruntime-android:1.24.3'
         }
     }
     repositories {

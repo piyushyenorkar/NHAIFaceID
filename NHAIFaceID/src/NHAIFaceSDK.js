@@ -51,7 +51,8 @@ class NHAIFaceSDK {
 
     // Check if the face already exists in the system to prevent duplicate enrollments
     // Even a LOW_CONFIDENCE match (>0.50) means this face is likely already registered
-    const dupCheck = await this.verifyEmbedding(embedding, landmarks, 'enrollment_check', true);
+    const centerEmbedding = Array.isArray(embedding[0]) ? embedding[0] : embedding;
+    const dupCheck = await this.verifyEmbedding(centerEmbedding, landmarks, 'enrollment_check', true);
     if (dupCheck.status === 'MATCH' || dupCheck.status === 'LOW_CONFIDENCE' || dupCheck.confidence > 0.45) {
       throw new Error(`Face is already enrolled under Employee ID: ${dupCheck.employeeId || 'Unknown'} (${dupCheck.name || 'Unknown'}). New unique face required.`);
     }
@@ -142,8 +143,20 @@ class NHAIFaceSDK {
         const row = results.rows.item(i);
         const storedEmbedding = JSON.parse(row.embedding);
         
-        // 1. Calculate base embedding similarity
-        const embeddingScore = cosineSimilarity(currentEmbedding, storedEmbedding);
+        // 1. Calculate base embedding similarity (handles single vector or multi-template ensemble)
+        let embeddingScore = 0;
+        if (Array.isArray(storedEmbedding[0])) {
+          let maxSim = -1;
+          for (const emb of storedEmbedding) {
+            const sim = cosineSimilarity(currentEmbedding, emb);
+            if (sim > maxSim) {
+              maxSim = sim;
+            }
+          }
+          embeddingScore = maxSim;
+        } else {
+          embeddingScore = cosineSimilarity(currentEmbedding, storedEmbedding);
+        }
         
         // 2. Perform geometric verification against registered template
         const storedRatios = JSON.parse(row.face_ratios || '{}');
@@ -157,9 +170,9 @@ class NHAIFaceSDK {
           const interpupillaryError = interpupillaryDiff / storedRatios.interpupillaryRatio;
           const noseHeightError = noseHeightDiff / storedRatios.noseHeightRatio;
 
-          // If ratios deviate by > 15%, apply a severe structural mismatch penalty
-          if (interpupillaryError > 0.15 || noseHeightError > 0.15) {
-            ratioPenalty = 0.40; // High penalty
+          // If ratios deviate by > 18%, apply a strict geometric mismatch penalty
+          if (interpupillaryError > 0.18 || noseHeightError > 0.18) {
+            ratioPenalty = 0.45; // Strict penalty
             isGeoMismatch = true;
           }
         }
@@ -181,9 +194,9 @@ class NHAIFaceSDK {
     // Classification threshold:
     // MobileFaceNet native cosine similarity is generally lower than TFJS. Adjusting threshold.
     let status = 'NO_MATCH';
-    if (bestScore > 0.70) {
+    if (bestScore > 0.68) {
       status = 'MATCH';
-    } else if (bestScore >= 0.55) {
+    } else if (bestScore >= 0.52) {
       status = 'LOW_CONFIDENCE';
     }
 

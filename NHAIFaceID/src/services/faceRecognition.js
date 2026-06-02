@@ -61,12 +61,30 @@ export async function generateEmbedding(croppedFace) {
     let rawVector = new Array(128).fill(0);
     
     if (croppedFace.landmarks && croppedFace.landmarks.length > 0) {
-      // Create a geometric hash based on the distances between the first 128 pairs of landmarks
+      // Normalize landmarks relative to the bounding box to ensure scale and translation independence
       const points = croppedFace.landmarks;
+      const bbox = croppedFace.originalBbox || { x: 0, y: 0, w: 1, h: 1 };
+      const { x, y, w, h } = bbox;
+      
+      const relPoints = points.map(pt => ({
+        x: w > 0 ? (pt.x - x) / w : 0,
+        y: h > 0 ? (pt.y - y) / h : 0
+      }));
+
+      // Create a geometric hash based on the distances between 128 pairs of relative internal feature landmarks
+      const numPoints = relPoints.length;
+      // Skip the outline silhouette (first 40% of points) to focus entirely on distinctive internal features
+      const startIndex = Math.floor(numPoints * 0.4);
+      const featureRange = numPoints - startIndex;
+
       for (let i = 0; i < 128; i++) {
-        const pt1 = points[i % points.length];
-        const pt2 = points[(i * 3 + 7) % points.length]; // pick a pseudo-random other point
-        // Calculate euclidean distance between the two facial landmarks
+        const idx1 = startIndex + (i * 2) % featureRange;
+        const idx2 = startIndex + (i * 7 + 13) % featureRange;
+        
+        const pt1 = relPoints[idx1];
+        const pt2 = relPoints[idx2];
+        
+        // Calculate euclidean distance between the two relative internal facial feature landmarks
         const dx = pt1.x - pt2.x;
         const dy = pt1.y - pt2.y;
         rawVector[i] = Math.sqrt(dx * dx + dy * dy);

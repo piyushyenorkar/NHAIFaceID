@@ -117,6 +117,58 @@ export function calculateDepthVariance(landmarks) {
 }
 
 /**
+ * Calculates standard deviation variance of relative coordinates over a history of frames.
+ * @param {Array} history - Array of frames, each containing normalized landmarks
+ * @returns {number} Average coordinate variance
+ */
+export function calculateLandmarksVariance(history) {
+  if (!history || history.length < 5) return 999.0;
+  
+  const numFrames = history.length;
+  const numLandmarks = history[0] ? history[0].length : 0;
+  if (numLandmarks === 0) return 999.0;
+  
+  let totalVariance = 0;
+  let validPointsCount = 0;
+  
+  for (let i = 0; i < numLandmarks; i++) {
+    let sumX = 0;
+    let sumY = 0;
+    let validFrames = 0;
+    
+    for (let f = 0; f < numFrames; f++) {
+      const pt = history[f] && history[f][i];
+      if (pt) {
+        sumX += pt.x;
+        sumY += pt.y;
+        validFrames++;
+      }
+    }
+    
+    if (validFrames < 5) continue;
+    
+    const meanX = sumX / validFrames;
+    const meanY = sumY / validFrames;
+    
+    let varX = 0;
+    let varY = 0;
+    for (let f = 0; f < numFrames; f++) {
+      const pt = history[f] && history[f][i];
+      if (pt) {
+        varX += Math.pow(pt.x - meanX, 2);
+        varY += Math.pow(pt.y - meanY, 2);
+      }
+    }
+    
+    totalVariance += (varX / validFrames) + (varY / validFrames);
+    validPointsCount++;
+  }
+  
+  return validPointsCount > 0 ? totalVariance / validPointsCount : 999.0;
+}
+
+
+/**
  * 1. Texture Analysis using Local Binary Patterns (LBP) approximation
  * Detects paper grain, screen moiré, or print artifacts.
  * @param {object} faceCrop - Bounding box or cropped frame data
@@ -233,3 +285,89 @@ export async function runPassiveLiveness(frame, landmarks, bbox = null) {
 
   return fuseLiveness(textureScore, reflectionScore, depthScore, aiScore);
 }
+
+/**
+ * Estimates yaw/pose angle symmetry from landmarks.
+ * @param {Array} landmarks - 468 landmark array
+ * @returns {object} { pass: boolean, ratio: number, reason: string|null }
+ */
+export function checkPoseAngle(landmarks) {
+  if (!landmarks || landmarks.length < 468) return { pass: true, ratio: 1.0, reason: null };
+  
+  const noseBridge = landmarks[257];
+  
+  const getEyeCenter = (eyePoints) => {
+    const sum = eyePoints.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 });
+    return { x: sum.x / eyePoints.length, y: sum.y / eyePoints.length };
+  };
+
+  const leftEyeCenter = getEyeCenter(landmarks.slice(290, 338));
+  const rightEyeCenter = getEyeCenter(landmarks.slice(338, 386));
+  
+  const leftDist = Math.abs(leftEyeCenter.x - noseBridge.x);
+  const rightDist = Math.abs(rightEyeCenter.x - noseBridge.x);
+  
+  if (leftDist === 0 || rightDist === 0) return { pass: true, ratio: 1.0, reason: null };
+  
+  const ratio = Math.max(leftDist, rightDist) / Math.min(leftDist, rightDist);
+  
+  // If eye-to-nose ratio deviates by > 45%, face is turned too far (bad pose)
+  const pass = ratio <= 1.45;
+  return {
+    pass,
+    ratio,
+    reason: !pass ? 'bad_angle' : null
+  };
+}
+
+/**
+ * Classifies head pose (center, left, right, up, down, or unknown) using face mesh ratios.
+ * @param {Array} landmarks - 468 landmark array
+ * @returns {string} Pose name
+ */
+export function estimatePoseAngle(landmarks) {
+  if (!landmarks || landmarks.length < 468) return 'unknown';
+  
+  const noseBridge = landmarks[168] || landmarks[257];
+  
+  const getEyeCenter = (eyePoints) => {
+    const sum = eyePoints.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 });
+    return { x: sum.x / eyePoints.length, y: sum.y / eyePoints.length };
+  };
+
+  const leftEyeCenter = getEyeCenter(landmarks.slice(290, 338));
+  const rightEyeCenter = getEyeCenter(landmarks.slice(338, 386));
+  
+  const leftDist = Math.abs(leftEyeCenter.x - noseBridge.x);
+  const rightDist = Math.abs(rightEyeCenter.x - noseBridge.x);
+  
+  if (leftDist === 0 || rightDist === 0) return 'unknown';
+  const yawRatio = leftDist / rightDist;
+  
+  const foreheadTop = landmarks[10];
+  const chinBottom = landmarks[152];
+  
+  if (!foreheadTop || !chinBottom) return 'unknown';
+  
+  const topDist = Math.abs(noseBridge.y - foreheadTop.y);
+  const bottomDist = Math.abs(noseBridge.y - chinBottom.y);
+  
+  if (bottomDist === 0) return 'unknown';
+  const pitchRatio = topDist / bottomDist;
+  
+  if (yawRatio > 1.45) {
+    return 'left';
+  } else if (yawRatio < 0.69) {
+    return 'right';
+  } else if (pitchRatio < 0.60) {
+    return 'up';
+  } else if (pitchRatio > 1.15) {
+    return 'down';
+  } else if (yawRatio >= 0.72 && yawRatio <= 1.38 && pitchRatio >= 0.65 && pitchRatio <= 1.10) {
+    return 'center';
+  }
+  
+  return 'unknown';
+}
+
+
