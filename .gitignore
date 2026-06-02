@@ -1,0 +1,7 @@
+node_modules/
+**/node_modules/
+NHAIFaceID/node_modules/
+android/app/build/
+**/android/app/build/
+.env
+*.log
