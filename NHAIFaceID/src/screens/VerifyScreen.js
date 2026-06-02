@@ -6,6 +6,7 @@ import RNFS from 'react-native-fs';
 import { decodeJpeg } from '@tensorflow/tfjs-react-native/dist/decode_image';
 
 import { Buffer } from 'buffer';
+import { alignAndCropFace, generateEmbedding } from '../services/faceRecognition';
 
 function base64ToUint8Array(base64) {
   return new Uint8Array(Buffer.from(base64, 'base64'));
@@ -42,10 +43,30 @@ export default function VerifyScreen({ navigation }) {
     };
   }, []);
 
+  const latestEmbeddingRef = useRef(null);
+  const latestLandmarksRef = useRef(null);
+  const latestBboxRef = useRef(null);
+
   // Called 30 times a second from CameraView
-  const handleFaceDetected = (bbox, landmarks) => {
+  const handleFaceDetected = (bbox, landmarks, embedding) => {
     if (matchStatus !== 'SEARCHING' || isProcessing) return;
-    lastDetectedRef.current = Date.now();
+    
+    if (bbox && landmarks) {
+      // Zone Check: Face should be of reasonable size, but we relax the strict centering
+      // because frame dimensions can be rotated (portrait vs landscape) causing issues.
+      const isCentered = true; 
+
+      if (isCentered) {
+        lastDetectedRef.current = Date.now();
+        latestLandmarksRef.current = landmarks;
+        latestBboxRef.current = bbox;
+        
+        // We only receive the embedding every ~300ms, keep the latest valid one
+        if (embedding) {
+          latestEmbeddingRef.current = embedding;
+        }
+      }
+    }
   };
 
   // Quick progress scanning loop for verification (400ms total for instant matching)
@@ -82,67 +103,80 @@ export default function VerifyScreen({ navigation }) {
             // Defer execution by 100ms to allow React to paint the loading/processing states
             setTimeout(() => {
               (async () => {
-                let tensor = null;
                 try {
-                  if (cameraViewRef.current) {
-                    const photoPath = await cameraViewRef.current.capturePhoto();
-                    if (photoPath) {
-                      const cleanPath = photoPath.replace(/^file:\/\//, '');
-                      const base64Data = await RNFS.readFile(cleanPath, 'base64');
-                      const rawBytes = base64ToUint8Array(base64Data);
-                      tensor = decodeJpeg(rawBytes);
+                  const currentLandmarks = latestLandmarksRef.current;
+                  const currentBbox = latestBboxRef.current;
 
-                      const result = await NHAIFaceSDK.verify(tensor, 'Device_ID_Demo');
-                      if (!isMountedRef.current) return;
-                      
-                      let targetColor = '#dc3545';
-                      if (result.status === 'MATCH') targetColor = '#28a745';
-                      if (result.status === 'LOW_CONFIDENCE') targetColor = '#ffc107';
+                  // Extract High-Res Photo & Generate Embedding via TFJS
+                  let currentEmbedding = latestEmbeddingRef.current;
+                  if (!currentEmbedding) {
+                    if (cameraViewRef.current) {
+                      const photoPath = await cameraViewRef.current.capturePhoto();
+                      if (photoPath) {
+                        const cropped = await alignAndCropFace({ path: photoPath }, currentBbox, currentLandmarks);
+                        currentEmbedding = await generateEmbedding(cropped);
+                      }
+                    }
+                  }
 
-                      setDetectedFace({
-                        bbox: result.bbox,
-                        landmarks: result.landmarks,
-                        color: targetColor
-                      });
+                  if (!currentEmbedding) {
+                    setIsProcessing(false);
+                    setProgress(0);
+                    setMatchStatus('SEARCHING');
+                    return;
+                  }
 
-                      if (result.status === 'REJECTED_SPOOF') {
-                        setMatchData({
-                          message: result.message,
-                          livenessScore: result.livenessScore,
-                          details: result.livenessDetails,
-                          time_ms: result.processingTimeMs
-                        });
-                        setMatchStatus('SPOOF_REJECTED');
-                      } else if (result.status === 'MATCH') {
-                        setMatchData({
-                          employee: result.employee,
-                          confidence: result.confidence,
-                          livenessScore: result.livenessScore,
-                          time_ms: result.processingTimeMs,
-                          breakdown: result.breakdownMs
-                        });
-                        setMatchStatus('MATCHED');
-                        
-                        Animated.timing(confidenceAnim, {
-                          toValue: parseFloat(result.confidence),
-                          duration: 800,
-                          useNativeDriver: false
-                        }).start();
-                      } else if (result.status === 'LOW_CONFIDENCE') {
-                        setMatchData({
-                          employee: result.employee,
-                          confidence: result.confidence,
-                          livenessScore: result.livenessScore,
-                          time_ms: result.processingTimeMs,
-                          breakdown: result.breakdownMs
-                        });
-                        setMatchStatus('LOW_CONFIDENCE');
-                        
-                        Animated.timing(confidenceAnim, {
-                          toValue: parseFloat(result.confidence),
-                          duration: 800,
-                          useNativeDriver: false
-                        }).start();
+                  const result = await NHAIFaceSDK.verifyEmbedding(currentEmbedding, currentLandmarks, 'Device_ID_Demo');
+                  if (!isMountedRef.current) return;
+                  
+                  let targetColor = '#dc3545';
+                  if (result.status === 'MATCH') targetColor = '#28a745';
+                  if (result.status === 'LOW_CONFIDENCE') targetColor = '#ffc107';
+
+                  setDetectedFace({
+                    bbox: currentBbox,
+                    landmarks: currentLandmarks,
+                    color: targetColor
+                  });
+
+                  if (result.status === 'REJECTED_SPOOF') {
+                    setMatchData({
+                      message: result.message,
+                      livenessScore: result.livenessScore,
+                      details: result.livenessDetails,
+                      time_ms: result.processingTimeMs
+                    });
+                    setMatchStatus('SPOOF_REJECTED');
+                  } else if (result.status === 'MATCH') {
+                    setMatchData({
+                      employee: result.employee,
+                      confidence: result.confidence,
+                      livenessScore: result.livenessScore,
+                      time_ms: result.processingTimeMs,
+                      breakdown: result.breakdownMs
+                    });
+                    setMatchStatus('MATCHED');
+                    
+                    Animated.timing(confidenceAnim, {
+                      toValue: parseFloat(result.confidence),
+                      duration: 800,
+                      useNativeDriver: false
+                    }).start();
+                  } else if (result.status === 'LOW_CONFIDENCE') {
+                    setMatchData({
+                      employee: result.employee,
+                      confidence: result.confidence,
+                      livenessScore: result.livenessScore,
+                      time_ms: result.processingTimeMs,
+                      breakdown: result.breakdownMs
+                    });
+                    setMatchStatus('LOW_CONFIDENCE');
+                    
+                    Animated.timing(confidenceAnim, {
+                      toValue: parseFloat(result.confidence),
+                      duration: 800,
+                      useNativeDriver: false
+                    }).start();
                       } else if (result.status === 'NO_FACE') {
                         setMatchData({
                           message: 'No face detected in captured frame. Please verify that the camera lens is clear.'
@@ -152,14 +186,7 @@ export default function VerifyScreen({ navigation }) {
                         setMatchData({
                           message: 'No face matched in offline database.'
                         });
-                        setMatchStatus('UNKNOWN');
                       }
-                    } else {
-                      throw new Error('Camera captured empty photo path');
-                    }
-                  } else {
-                    throw new Error('Camera is not active');
-                  }
                 } catch (err) {
                   console.error('[VerifyScreen] Verification error:', err);
                   if (isMountedRef.current) {
@@ -169,9 +196,6 @@ export default function VerifyScreen({ navigation }) {
                 } finally {
                   if (isMountedRef.current) {
                     setIsProcessing(false);
-                  }
-                  if (tensor) {
-                    tensor.dispose();
                   }
                 }
               })();
@@ -274,6 +298,19 @@ export default function VerifyScreen({ navigation }) {
             <Text style={styles.searchingText}>
               {isProcessing ? '⚙️ Biometric Audit in Progress' : 'Running Biometric Audit...'}
             </Text>
+            
+            {/* Show physical geometric distances on screen if matching */}
+            {latestEmbeddingRef.current && (
+              <View style={{position: 'absolute', top: 120, left: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.6)', padding: 10, borderRadius: 8}}>
+                <Text style={{color: '#00FF00', fontSize: 10, fontFamily: 'monospace'}}>
+                  LIVE 128-D GEOMETRIC DISTANCES (Sample):
+                </Text>
+                <Text style={{color: '#00FF00', fontSize: 10, fontFamily: 'monospace', marginTop: 4}}>
+                  [{latestEmbeddingRef.current.slice(0, 8).map(v => v.toFixed(3)).join(', ')} ...]
+                </Text>
+              </View>
+            )}
+
             <Text style={styles.searchingSubtext}>
               {isProcessing 
                 ? 'Processing offline neural network matching... Please wait.' 

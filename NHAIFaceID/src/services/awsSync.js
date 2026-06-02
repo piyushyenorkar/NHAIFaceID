@@ -85,13 +85,16 @@ class AWSSyncManager {
       } else {
         console.error('[AWS Sync] Batch upload failed with status:', response.status);
         this.retryCount += 1;
-        if (this.retryCount <= 3) {
-           console.log(`[AWS Sync] Retrying... (${this.retryCount}/3)`);
+        if (this.retryCount <= 5) {
+           // Exponential backoff: 5s, 10s, 20s, 40s, 80s
+           const backoffMs = Math.pow(2, this.retryCount - 1) * 5000;
+           console.log(`[AWS Sync] Retrying in ${backoffMs/1000}s... (Attempt ${this.retryCount}/5)`);
            this.isSyncing = false;
-           setTimeout(() => this.triggerSync(), 5000); // Retry in 5s
+           setTimeout(() => this.triggerSync(), backoffMs);
            return;
         } else {
-           console.log('[AWS Sync] Max retries reached. Will try later.');
+           console.log('[AWS Sync] Max retries reached. Will try later when network changes.');
+           this.retryCount = 0; // Reset for next network event
         }
       }
 

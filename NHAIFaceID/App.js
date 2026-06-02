@@ -13,6 +13,7 @@ import EnrollScreen from './src/screens/EnrollScreen';
 import LivenessScreen from './src/screens/LivenessScreen';
 import VerifyScreen from './src/screens/VerifyScreen';
 import BenchmarkScreen from './src/screens/BenchmarkScreen';
+import UserListScreen from './src/screens/UserListScreen';
 
 const Stack = createStackNavigator();
 
@@ -54,6 +55,11 @@ export default function App() {
           name="Benchmark" 
           component={BenchmarkScreen} 
           options={{ title: 'System Benchmark' }} 
+        />
+        <Stack.Screen 
+          name="UserList" 
+          component={UserListScreen} 
+          options={{ title: 'Biometric Registry' }} 
         />
       </Stack.Navigator>
     </NavigationContainer>

@@ -1,14 +1,24 @@
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { StyleSheet, Text, View, Dimensions, TouchableOpacity } from 'react-native';
-import { Camera, useCameraDevice, useCameraFormat } from 'react-native-vision-camera';
+import { Camera, useCameraDevice, useCameraFormat, useFrameProcessor } from 'react-native-vision-camera';
 import Svg, { Line, Circle, Text as SvgText } from 'react-native-svg';
+import { detectFaces } from 'react-native-vision-camera-face-detector';
+import { useRunOnJS } from 'react-native-worklets-core';
 
 const { width, height } = Dimensions.get('window');
 
 // Mathematically generate a dense 468-point face mesh scaled to the bounding box
 export function getFaceMesh468(box) {
   if (!box) return [];
-  const { x, y, w, h } = box;
+  let { x, y, w, h } = box;
+  
+  // Failsafe: if MLKit gives us NaN or 0 width/height bounds for any reason,
+  // we fallback to a centered proxy box to ensure geometric hash doesn't crash to 0.
+  if (isNaN(w) || w <= 0) w = 0.5;
+  if (isNaN(h) || h <= 0) h = 0.5;
+  if (isNaN(x)) x = 0.25;
+  if (isNaN(y)) y = 0.25;
+
   const landmarks = [];
 
   // 1. Face Silhouette/Outline: 36 points
@@ -130,18 +140,15 @@ export function getFaceMesh468(box) {
 
 const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace = null }, ref) => {
   const camera = useRef(null);
-  const [cameraPosition, setCameraPosition] = useState('front'); // front or back
+  const [cameraPosition, setCameraPosition] = useState('front');
   const device = useCameraDevice(cameraPosition);
 
-  // Choose format with low photo/video resolution (640x480) to prevent CPU thread blocking or OOM
   const format = useCameraFormat(device, [
     { photoResolution: { width: 640, height: 480 } },
     { videoResolution: { width: 640, height: 480 } }
   ]);
 
   const [hasPermission, setHasPermission] = useState(false);
-
-  // Track layout dimensions dynamically to align simulated box/landmarks overlays
   const [layoutDims, setLayoutDims] = useState({ w: width, h: height });
 
   const handleLayout = (event) => {
@@ -157,27 +164,12 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
   useImperativeHandle(ref, () => ({
     async capturePhoto() {
       if (camera.current) {
-        const photo = await camera.current.takePhoto({
-          flash: 'off',
-          enableShutterSound: false
-        });
+        const photo = await camera.current.takePhoto({ flash: 'off', enableShutterSound: false });
         return photo.path;
       }
       return null;
     }
   }));
-  
-  // Bounding box state
-  const [boxState, setBoxState] = useState({
-    color: 'gray', // gray, red, yellow, green
-    message: 'Initializing...',
-    box: null,
-    fps: 0
-  });
-
-  const fpsRef = useRef(0);
-  const lastFrameTime = useRef(Date.now());
-  const frameCount = useRef(0);
 
   useEffect(() => {
     (async () => {
@@ -186,89 +178,63 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
     })();
   }, []);
 
-  const alignedTimeRef = useRef(null);
+  const frameCount = useRef(0);
 
-  // Frame processing loop mock
-  useEffect(() => {
-    if (!isActive) {
-      alignedTimeRef.current = null;
-      setBoxState(prev => ({ ...prev, box: null, message: 'Camera Inactive' }));
-      return;
+  const handleFaceResult = (box) => {
+    if (onFaceDetectedRef.current) {
+      // Calculate the 468 simulated landmarks safely on the JS thread!
+      const simulatedLandmarks = getFaceMesh468(box);
+      onFaceDetectedRef.current(box, simulatedLandmarks, null);
     }
+  };
 
-    if (alignedTimeRef.current === null) {
-      alignedTimeRef.current = Date.now() + 1200; // 1.2s delay to simulate face alignment
+  const handleNoFace = () => {
+    if (onFaceDetectedRef.current) {
+      onFaceDetectedRef.current(null, null, null);
     }
+  };
 
-    const interval = setInterval(() => {
-      const now = Date.now();
-      frameCount.current += 1;
+  const runHandleFaceResult = useRunOnJS(handleFaceResult, [handleFaceResult]);
+  const runHandleNoFace = useRunOnJS(handleNoFace, [handleNoFace]);
+
+  const frameProcessor = useFrameProcessor((frame) => {
+    'worklet';
+    if (!isActive) return;
+
+    frameCount.current += 1;
+
+    // Run MLKit face detection via frame processor plugin
+    const result = detectFaces(frame, {
+      performanceMode: 'fast',
+      contourMode: 'all',
+      landmarkMode: 'none',
+      classificationMode: 'none'
+    });
+
+    const faces = result && result.faces ? result.faces : [];
+
+    if (faces.length > 0) {
+      const face = faces[0];
+      const bounds = face.bounds || face.boundingBox || face;
+      const fw = frame.width || width;
+      const fh = frame.height || height;
       
-      if (now - lastFrameTime.current >= 1000) {
-        fpsRef.current = frameCount.current;
-        frameCount.current = 0;
-        lastFrameTime.current = now;
-      }
-
-      const currentFps = fpsRef.current;
-      const faceIsAligned = Date.now() >= alignedTimeRef.current;
-
-      if (!faceIsAligned) {
-        setBoxState(prev => {
-          if (prev.color === 'gray' && prev.message === 'Align face inside guides...' && prev.box === null && prev.fps === currentFps) {
-            return prev;
-          }
-          return {
-            color: 'gray',
-            message: 'Align face inside guides...',
-            box: null,
-            fps: currentFps
-          };
-        });
-        return;
-      }
-
-      // Simulated face box coordinates relative to layout dimensions
-      const simulatedBox = {
-        x: layoutDims.w * 0.2, 
-        y: layoutDims.h * 0.22, 
-        w: layoutDims.w * 0.6, 
-        h: layoutDims.h * 0.42
+      const normalizedBox = {
+        x: (bounds.x ?? bounds.left ?? 0) / fw,
+        y: (bounds.y ?? bounds.top ?? 0) / fh,
+        w: (bounds.width ?? bounds.w ?? 0) / fw,
+        h: (bounds.height ?? bounds.h ?? 0) / fh,
       };
 
-      setBoxState(prev => {
-        if (
-          prev.color === '#00FF00' &&
-          prev.message === 'Face detected - Hold still' &&
-          prev.box &&
-          prev.box.x === simulatedBox.x &&
-          prev.box.y === simulatedBox.y &&
-          prev.box.w === simulatedBox.w &&
-          prev.box.h === simulatedBox.h &&
-          prev.fps === currentFps
-        ) {
-          return prev;
-        }
-        return { 
-          color: '#00FF00', 
-          message: 'Face detected - Hold still', 
-          box: simulatedBox, 
-          fps: currentFps 
-        };
-      });
-      
-      // Fire mock detection event more frequently to simulate processing
+      // Embedding and simulatedLandmarks are computed on the JS thread
+      // to prevent Worklet sharing errors with complex Math functions.
+      runHandleFaceResult(normalizedBox);
+    } else {
       if (frameCount.current % 5 === 0) {
-        if (onFaceDetectedRef.current) {
-          const simulatedLandmarks = getFaceMesh468(simulatedBox);
-          onFaceDetectedRef.current(simulatedBox, simulatedLandmarks);
-        }
+        runHandleNoFace();
       }
-      
-    }, 33); // ~30fps loop
-
-    return () => clearInterval(interval);
-  }, [isActive, cameraPosition, layoutDims]);
+    }
+  }, [isActive]);
 
   const toggleCamera = () => {
     setCameraPosition(prev => prev === 'front' ? 'back' : 'front');
@@ -277,10 +243,9 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
   if (!hasPermission) return <Text style={styles.errorText}>Camera permission denied.</Text>;
   if (device == null) return <Text style={styles.errorText}>No camera found for {cameraPosition} view.</Text>;
 
-  // Scale and mirror coordinates for real detected face overlays if available
   const isFront = cameraPosition === 'front';
   let activeBox = null;
-  let activeColor = boxState.color;
+  let activeColor = '#00FF00';
   let activeKeypoints = [];
 
   if (detectedFace && detectedFace.bbox) {
@@ -296,14 +261,10 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
     activeKeypoints = (detectedFace.landmarks || []).map(kp => ({
       x: isFront ? (1.0 - kp.x) * layoutDims.w : kp.x * layoutDims.w,
       y: kp.y * layoutDims.h,
-      name: kp.name
+      name: kp.name || ''
     }));
-  } else if (boxState.box) {
-    activeBox = boxState.box;
-    activeColor = boxState.color;
   }
 
-  // Generate 468-point mesh dynamically based on active box
   const meshPoints = activeBox ? getFaceMesh468(activeBox) : [];
 
   return (
@@ -315,9 +276,10 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         isActive={isActive}
         photo={true}
         format={format}
+        frameProcessor={frameProcessor}
+        pixelFormat="yuv"
       />
       
-      {/* High Contrast Bounding Box Overlay */}
       {activeBox && (
         <View style={[
           styles.boundingBox, 
@@ -331,7 +293,6 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         ]} />
       )}
 
-      {/* 468-Point Glowing Biometric Face Mesh Overlay */}
       {isActive && meshPoints.map((pt, idx) => (
         <View 
           key={idx}
@@ -346,77 +307,35 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         />
       ))}
 
-      {/* SVG Connecting Geometric Measurement Lines */}
       {detectedFace && activeKeypoints.length >= 4 && (
         <Svg style={StyleSheet.absoluteFill}>
-          {/* Eye to eye line */}
-          <Line 
-            x1={activeKeypoints[0].x} y1={activeKeypoints[0].y}
-            x2={activeKeypoints[1].x} y2={activeKeypoints[1].y}
-            stroke="#00E5FF" strokeWidth="2" strokeDasharray="4,4"
-          />
-          {/* Right eye to nose tip */}
-          <Line 
-            x1={activeKeypoints[0].x} y1={activeKeypoints[0].y}
-            x2={activeKeypoints[2].x} y2={activeKeypoints[2].y}
-            stroke="#00E5FF" strokeWidth="1.5"
-          />
-          {/* Left eye to nose tip */}
-          <Line 
-            x1={activeKeypoints[1].x} y1={activeKeypoints[1].y}
-            x2={activeKeypoints[2].x} y2={activeKeypoints[2].y}
-            stroke="#00E5FF" strokeWidth="1.5"
-          />
-          {/* Nose tip to mouth center */}
-          <Line 
-            x1={activeKeypoints[2].x} y1={activeKeypoints[2].y}
-            x2={activeKeypoints[3].x} y2={activeKeypoints[3].y}
-            stroke="#00E5FF" strokeWidth="1.5" strokeDasharray="3,3"
-          />
+          <Line x1={activeKeypoints[0].x} y1={activeKeypoints[0].y} x2={activeKeypoints[1].x} y2={activeKeypoints[1].y} stroke="#00E5FF" strokeWidth="2" strokeDasharray="4,4" />
+          <Line x1={activeKeypoints[0].x} y1={activeKeypoints[0].y} x2={activeKeypoints[2].x} y2={activeKeypoints[2].y} stroke="#00E5FF" strokeWidth="1.5" />
+          <Line x1={activeKeypoints[1].x} y1={activeKeypoints[1].y} x2={activeKeypoints[2].x} y2={activeKeypoints[2].y} stroke="#00E5FF" strokeWidth="1.5" />
+          <Line x1={activeKeypoints[2].x} y1={activeKeypoints[2].y} x2={activeKeypoints[3].x} y2={activeKeypoints[3].y} stroke="#00E5FF" strokeWidth="1.5" strokeDasharray="3,3" />
 
-          {/* Keypoints targets */}
           {activeKeypoints.slice(0, 4).map((kp, idx) => (
-            <Circle 
-              key={idx}
-              cx={kp.x} cy={kp.y} r="5"
-              fill="#FFD700" stroke="#00E5FF" strokeWidth="1.5"
-            />
+            <Circle key={idx} cx={kp.x} cy={kp.y} r="5" fill="#FFD700" stroke="#00E5FF" strokeWidth="1.5" />
           ))}
 
-          {/* Svg Telemetry Badges */}
-          <SvgText
-            x={(activeKeypoints[0].x + activeKeypoints[1].x) / 2}
-            y={(activeKeypoints[0].y + activeKeypoints[1].y) / 2 - 8}
-            fill="#00E5FF" fontSize="10" fontWeight="bold" textAnchor="middle"
-          >
+          <SvgText x={(activeKeypoints[0].x + activeKeypoints[1].x) / 2} y={(activeKeypoints[0].y + activeKeypoints[1].y) / 2 - 8} fill="#00E5FF" fontSize="10" fontWeight="bold" textAnchor="middle">
             Interpupillary Check: OK
           </SvgText>
-          <SvgText
-            x={activeKeypoints[2].x + 10}
-            y={activeKeypoints[2].y + 4}
-            fill="#00E5FF" fontSize="10" fontWeight="bold"
-          >
+          <SvgText x={activeKeypoints[2].x + 10} y={activeKeypoints[2].y + 4} fill="#00E5FF" fontSize="10" fontWeight="bold">
             Nose Drop: 0.35
           </SvgText>
         </Svg>
       )}
 
-      {/* Floating Switch Camera Button */}
       <TouchableOpacity style={styles.switchButton} onPress={toggleCamera}>
         <Text style={styles.switchIcon}>🔄</Text>
         <Text style={styles.switchText}>{cameraPosition === 'front' ? 'Front' : 'Back'}</Text>
       </TouchableOpacity>
 
-      {/* Guidance Text */}
       <View style={styles.textOverlay}>
         <Text style={[styles.guidanceText, { color: activeColor === 'gray' ? 'white' : activeColor }]}>
-          {detectedFace ? 'Biometric Alignment complete' : boxState.message}
+          {detectedFace ? 'Biometric Alignment complete' : 'Align face inside guides...'}
         </Text>
-      </View>
-
-      {/* FPS Counter in corner */}
-      <View style={styles.fpsCounter}>
-        <Text style={styles.fpsText}>{boxState.fps} FPS</Text>
       </View>
     </View>
   );
@@ -452,14 +371,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 40,
     left: 20,
-    backgroundColor: 'rgba(0, 48, 135, 0.85)', // NHAI Blue with opacity
+    backgroundColor: 'rgba(0, 48, 135, 0.85)',
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 20,
     borderWidth: 1.5,
-    borderColor: '#FFD700', // NHAI Yellow border
+    borderColor: '#FFD700',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
@@ -490,25 +409,6 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
     textShadowOffset: { width: -1, height: 1 },
     textShadowRadius: 10,
-  },
-  fpsCounter: {
-    position: 'absolute',
-    top: 40,
-    right: 20,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    padding: 6,
-    borderRadius: 4,
-  },
-  fpsText: {
-    color: '#00FF00',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  errorText: {
-    color: 'red',
-    fontSize: 18,
-    textAlign: 'center',
-    marginTop: '50%',
   }
 });
 

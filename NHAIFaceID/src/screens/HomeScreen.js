@@ -1,14 +1,44 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import SyncBanner from '../components/SyncBanner';
+import { getDBConnection } from '../services/localStorage';
 
 export default function HomeScreen({ navigation }) {
-  // Mock data for UI layout
-  const stats = {
-    enrolledCount: 142,
-    verificationsToday: 89,
-    pendingSync: 3
+  const [stats, setStats] = useState({
+    enrolledCount: 0,
+    verificationsToday: 0,
+    pendingSync: 0
+  });
+
+  const loadStats = async () => {
+    try {
+      const db = await getDBConnection();
+      
+      const [enrollRes] = await db.executeSql('SELECT COUNT(*) as count FROM enrolled_faces');
+      const enrolledCount = enrollRes.rows.item(0).count;
+
+      const [syncRes] = await db.executeSql('SELECT COUNT(*) as count FROM verification_log WHERE synced = 0');
+      const pendingSync = syncRes.rows.item(0).count;
+
+      // Verifications today
+      const [todayRes] = await db.executeSql("SELECT COUNT(*) as count FROM verification_log WHERE timestamp >= date('now')");
+      const verificationsToday = todayRes.rows.item(0).count;
+
+      setStats({ enrolledCount, verificationsToday, pendingSync });
+    } catch (e) {
+      console.log('[HomeScreen] Failed to load stats:', e);
+    }
   };
+
+  useFocusEffect(
+    useCallback(() => {
+      loadStats();
+      // Optional: Polling every 5s while focused to update sync status automatically
+      const interval = setInterval(loadStats, 5000);
+      return () => clearInterval(interval);
+    }, [])
+  );
 
   const systemStatus = {
     modelsLoaded: true,
@@ -47,20 +77,22 @@ export default function HomeScreen({ navigation }) {
         </View>
 
         {/* Live Stats Row */}
-        <View style={styles.statsRow}>
-          <View style={styles.statBox}>
-            <Text style={styles.statValue}>{stats.enrolledCount}</Text>
-            <Text style={styles.statLabel}>Enrolled</Text>
+        <TouchableOpacity onPress={() => navigation.navigate('UserList')} activeOpacity={0.7}>
+          <View style={styles.statsRow}>
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>{stats.enrolledCount}</Text>
+              <Text style={styles.statLabel}>Enrolled</Text>
+            </View>
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>{stats.verificationsToday}</Text>
+              <Text style={styles.statLabel}>Verified Today</Text>
+            </View>
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>{stats.pendingSync}</Text>
+              <Text style={styles.statLabel}>Pending Sync</Text>
+            </View>
           </View>
-          <View style={styles.statBox}>
-            <Text style={styles.statValue}>{stats.verificationsToday}</Text>
-            <Text style={styles.statLabel}>Verified Today</Text>
-          </View>
-          <View style={styles.statBox}>
-            <Text style={styles.statValue}>{stats.pendingSync}</Text>
-            <Text style={styles.statLabel}>Pending Sync</Text>
-          </View>
-        </View>
+        </TouchableOpacity>
 
         {/* System Status */}
         <View style={styles.systemStatusContainer}>

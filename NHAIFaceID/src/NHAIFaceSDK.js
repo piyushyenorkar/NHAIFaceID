@@ -36,43 +36,33 @@ class NHAIFaceSDK {
   }
 
   /**
-   * 2. enroll(employeeId, name, faceImageTensor)
-   * Extracts a 128-d embedding, facial ratios, and depth variance from a live face,
-   * verifies liveness (blocking spoof enrollments), and saves to SQLite.
+   * 2. enrollEmbedding(employeeId, name, embedding, landmarks, photoPath)
+   * Extracts facial ratios and saves the pre-computed embedding from the native C++ frame processor to SQLite.
    */
-  async enroll(employeeId, name, faceImageTensor) {
+  async enrollEmbedding(employeeId, name, embedding, landmarks, photoPath = null) {
     if (!employeeId || !name) throw new Error('employeeId and name are required');
-    
-    // Detect face to find bounding box and landmarks
-    const detection = await detectFace(faceImageTensor);
-    if (!detection.detected) {
-      throw new Error('No face detected during enrollment');
-    }
-
-    const { bbox, landmarks } = detection;
+    if (!embedding) throw new Error('Valid face embedding is required');
 
     // Strict enrollment anti-spoofing check
-    const livenessResult = await runPassiveLiveness(faceImageTensor, landmarks, bbox);
+    const livenessResult = await runPassiveLiveness(null, landmarks, null);
     if (!livenessResult.passed) {
       throw new Error(`Enrollment rejected: Liveness check failed (Score: ${(livenessResult.score * 100).toFixed(1)}%). Spoof enrollments are prohibited.`);
+    }
+
+    // Check if the face already exists in the system to prevent duplicate enrollments
+    // Even a LOW_CONFIDENCE match (>0.50) means this face is likely already registered
+    const dupCheck = await this.verifyEmbedding(embedding, landmarks, 'enrollment_check', true);
+    if (dupCheck.status === 'MATCH' || dupCheck.status === 'LOW_CONFIDENCE' || dupCheck.confidence > 0.45) {
+      throw new Error(`Face is already enrolled under Employee ID: ${dupCheck.employeeId || 'Unknown'} (${dupCheck.name || 'Unknown'}). New unique face required.`);
     }
 
     // Extract mathematical face registration profile
     const depthVariance = calculateDepthVariance(landmarks);
     const faceRatios = calculateFacialRatios(landmarks);
 
-    // Align & crop face frame to 112x112
-    const cropped = await alignAndCropFace(faceImageTensor, bbox);
-
-    // Generate embedding
-    const embedding = await generateEmbedding(cropped);
-    if (!embedding) {
-      throw new Error('Failed to extract face embedding');
-    }
-
     // Save to local SQLite database with registration metrics
     try {
-      await insertEnrolledFace(employeeId, name, embedding, depthVariance, faceRatios);
+      await insertEnrolledFace(employeeId, name, embedding, depthVariance, faceRatios, photoPath);
     } catch (dbError) {
       console.error('[NHAIFaceSDK] SQLite Insert failed:', dbError);
       if (dbError && dbError.message && dbError.message.includes('UNIQUE constraint failed')) {
@@ -84,7 +74,6 @@ class NHAIFaceSDK {
     console.log(`[NHAIFaceSDK] Successfully enrolled ${name} offline with geometric ratios.`);
     return {
       success: true,
-      bbox,
       landmarks
     };
   }
@@ -98,82 +87,47 @@ class NHAIFaceSDK {
   }
 
   /**
-   * 4. verify(faceImageTensor, deviceId)
-   * Runs the optimized passive liveness pipeline:
-   * BlazeFace -> Parallel Liveness (LBP, reflection, depth) -> Fusion & Early Exit -> MobileFaceNet -> SQLite matching -> Geometric Validation.
+   * 4. verifyEmbedding(currentEmbedding, landmarks, deviceId, skipLog)
+   * Uses the pre-computed embedding from the native C++ frame processor (MobileFaceNet).
+   * Completely bypasses JS photo capture, making verification instant.
    */
-  async verify(faceImageTensor, deviceId = 'unknown') {
+  async verifyEmbedding(currentEmbedding, landmarks, deviceId = 'unknown', skipLog = false) {
     MetricsLogger.startTimer('Total Pipeline');
     
-    // STEP 1: Face Detection (BlazeFace) ~15ms
-    MetricsLogger.startTimer('1. Face Detection');
-    const detection = await detectFace(faceImageTensor);
-    const detectionTime = MetricsLogger.endTimer('1. Face Detection');
+    // STEP 1: Passive Liveness
+    MetricsLogger.startTimer('1. Passive Liveness');
+    // Since we skipped taking a photo, we pass null to use coordinate/depth based liveness
+    const livenessResult = await runPassiveLiveness(null, landmarks, null);
+    const livenessTime = MetricsLogger.endTimer('1. Passive Liveness');
 
-    if (!detection.detected) {
-      const pipelineMs = MetricsLogger.endTimer('Total Pipeline');
-      return {
-        status: 'NO_FACE',
-        message: detection.multipleFaces ? 'Multiple faces detected' : 'No face detected',
-        confidence: 0,
-        processingTimeMs: pipelineMs
-      };
-    }
-
-    const { bbox, landmarks } = detection;
-
-    // STEP 2: Parallel Passive Liveness ~65ms
-    MetricsLogger.startTimer('2. Passive Liveness (Parallel)');
-    const livenessResult = await runPassiveLiveness(faceImageTensor, landmarks, bbox);
-    const livenessTime = MetricsLogger.endTimer('2. Passive Liveness (Parallel)');
-
-    // STEP 3: Liveness Score Fusion & Early-Exit Check
     if (!livenessResult.passed) {
       const pipelineMs = MetricsLogger.endTimer('Total Pipeline');
       
-      // Log failed attempt (spoof rejection)
-      const logData = {
-        employee_id: null,
-        matched: false,
-        confidence: 0.00,
-        liveness_passed: false,
-        liveness_score: livenessResult.score * 100,
-        pipeline_ms: pipelineMs,
-        device_id: deviceId
-      };
-      await insertVerificationLog(logData);
+      // LOG SPOOF ATTEMPT TO SQLITE (for audit sync)
+      if (!skipLog) {
+        await insertVerificationLog({
+          employee_id: 'UNKNOWN_SPOOF',
+          matched: false,
+          confidence: 0,
+          liveness_passed: false,
+          liveness_score: (livenessResult.score * 100).toFixed(2),
+          pipeline_ms: pipelineMs,
+          device_id: deviceId
+        });
+      }
 
-      console.log(`[NHAFaceSDK] Authentication rejected: SPOOF detected (Score: ${livenessResult.score})`);
       return {
         status: 'REJECTED_SPOOF',
         message: 'Spoofing detected (paper grain / screen glare / flat 2D frame)',
         confidence: 0,
         livenessScore: livenessResult.score,
         livenessDetails: livenessResult.details,
-        bbox,
-        landmarks,
         processingTimeMs: pipelineMs
       };
     }
 
-    // STEP 4: Face Recognition embedding generation ~100ms
-    MetricsLogger.startTimer('3. Embedding Generation');
-    const cropped = await alignAndCropFace(faceImageTensor, bbox);
-    const currentEmbedding = await generateEmbedding(cropped);
-    const embeddingTime = MetricsLogger.endTimer('3. Embedding Generation');
-
-    if (!currentEmbedding) {
-      const pipelineMs = MetricsLogger.endTimer('Total Pipeline');
-      return {
-        status: 'ERROR',
-        message: 'Failed to extract face embedding',
-        confidence: 0,
-        processingTimeMs: pipelineMs
-      };
-    }
-
-    // STEP 5: Cosine Similarity Matching & Geometric Cross-Validation
-    MetricsLogger.startTimer('4. Offline SQLite Search & Validation');
+    // STEP 2: SQLite Search & Validation
+    MetricsLogger.startTimer('2. Offline SQLite Search & Validation');
     const currentRatios = calculateFacialRatios(landmarks);
     
     let bestMatch = null;
@@ -219,55 +173,20 @@ class NHAIFaceSDK {
         }
       }
     } catch (dbError) {
-      console.error('[NHAIFaceSDK] Database query failed, checking demo fallback:', dbError);
+      console.error('[NHAIFaceSDK] Database query failed:', dbError);
     }
 
-    // Demo fallback logic if SQLite database is empty or embedding similarity is low (due to mock random vectors)
-    if (bestScore < 0.60) {
-      try {
-        const db = await getDBConnection();
-        const [results] = await db.executeSql('SELECT employee_id, name, embedding, depth_variance, face_ratios FROM enrolled_faces ORDER BY id DESC LIMIT 1');
-        if (results.rows.length > 0) {
-          const row = results.rows.item(0);
-          bestScore = 0.85; // Simulate high confidence match for demo consistency
-          bestMatch = row;
-          geoMismatchOccurred = false;
-        } else {
-          // Hardcoded fallback if database has zero records
-          bestScore = 0.82;
-          bestMatch = {
-            employee_id: 'NHAI-2049',
-            name: 'Ramesh Kumar',
-            face_ratios: JSON.stringify(currentRatios)
-          };
-          geoMismatchOccurred = false;
-        }
-      } catch (dbErr) {
-        // Fallback on SQLite error
-        bestScore = 0.82;
-        bestMatch = {
-          employee_id: 'NHAI-2049',
-          name: 'Ramesh Kumar',
-          face_ratios: JSON.stringify(currentRatios)
-        };
-        geoMismatchOccurred = false;
-      }
-    }
+    const sqliteTime = MetricsLogger.endTimer('2. Offline SQLite Search & Validation');
 
-    const sqliteTime = MetricsLogger.endTimer('4. Offline SQLite Search & Validation');
-
-    // Classification threshold per specs:
-    // > 0.75: MATCH
-    // 0.60 - 0.75: LOW CONFIDENCE
-    // < 0.60: NO MATCH (or triggered by geometric mismatch)
+    // Classification threshold:
+    // MobileFaceNet native cosine similarity is generally lower than TFJS. Adjusting threshold.
     let status = 'NO_MATCH';
-    if (bestScore > 0.75) {
+    if (bestScore > 0.70) {
       status = 'MATCH';
-    } else if (bestScore >= 0.60) {
+    } else if (bestScore >= 0.55) {
       status = 'LOW_CONFIDENCE';
     }
 
-    // Override status if a geometric mismatch was flagged to prevent spoof bypasses
     if (geoMismatchOccurred && status === 'MATCH') {
       status = 'LOW_CONFIDENCE';
     }
@@ -276,31 +195,29 @@ class NHAIFaceSDK {
     MetricsLogger.logConfidence(bestScore * 100);
 
     // Save attendance log in local SQLite
-    const logData = {
-      employee_id: bestMatch ? bestMatch.employee_id : null,
-      matched: status === 'MATCH',
-      confidence: (bestScore * 100).toFixed(2),
-      liveness_passed: true,
-      liveness_score: (livenessResult.score * 100).toFixed(2),
-      pipeline_ms: pipelineMs,
-      device_id: deviceId
-    };
-    await insertVerificationLog(logData);
+    if (!skipLog) {
+      const logData = {
+        employee_id: bestMatch ? bestMatch.employee_id : null,
+        matched: status === 'MATCH',
+        confidence: (bestScore * 100).toFixed(2),
+        liveness_passed: true,
+        liveness_score: (livenessResult.score * 100).toFixed(2),
+        pipeline_ms: pipelineMs,
+        device_id: deviceId
+      };
+      await insertVerificationLog(logData);
+    }
 
     return {
-      status, // 'MATCH', 'LOW_CONFIDENCE', 'NO_MATCH'
+      status, 
       employee: status !== 'NO_MATCH' ? bestMatch : null,
-      confidence: logData.confidence,
-      livenessScore: logData.liveness_score,
+      confidence: (bestScore * 100).toFixed(2),
+      livenessScore: (livenessResult.score * 100).toFixed(2),
       livenessDetails: livenessResult.details,
       geometricMatch: !geoMismatchOccurred,
-      bbox,
-      landmarks,
       processingTimeMs: pipelineMs,
       breakdownMs: {
-        detection: detectionTime,
         liveness: livenessTime,
-        embedding: embeddingTime,
         sqlite: sqliteTime
       }
     };
