@@ -1,7 +1,28 @@
+# Node modules
 node_modules/
 **/node_modules/
 NHAIFaceID/node_modules/
-android/app/build/
+
+# Android build and caches
+.gradle/
+**/android/.gradle/
+**/android/build/
 **/android/app/build/
+build/
+*.apk
+*.aar
+
+# iOS build and pods
+**/ios/Pods/
+**/ios/build/
+*.xcworkspace
+
+# Logs and environment
 .env
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Lockfiles from outer directories
+package-lock.json
