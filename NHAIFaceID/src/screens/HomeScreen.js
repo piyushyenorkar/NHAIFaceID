@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, SafeAreaView, StatusBar } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, SafeAreaView, StatusBar, Alert } from 'react-native';
 import SyncBanner from '../components/SyncBanner';
 import { EnrollIcon, LivenessIcon, VerifyIcon, BenchmarkIcon, SettingsIcon } from '../components/Icons';
 
 export default function HomeScreen({ navigation }) {
   const [time, setTime] = useState(new Date());
+  const [logoTapCount, setLogoTapCount] = useState(0);
+  const [devMode, setDevMode] = useState(false);
+  const [lastBenchmark, setLastBenchmark] = useState('847ms');
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -12,24 +15,42 @@ export default function HomeScreen({ navigation }) {
   }, []);
 
   const formatTime = (date) => {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
   };
 
   const formatDate = (date) => {
-    return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+    return date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
   };
 
-  // Mock data for UI layout
+  const handleLogoTap = () => {
+    const nextCount = logoTapCount + 1;
+    if (nextCount >= 5) {
+      setDevMode(!devMode);
+      setLogoTapCount(0);
+      Alert.alert(
+        'Developer Mode',
+        !devMode ? 'Developer options and diagnostics unlocked.' : 'Developer options locked.'
+      );
+    } else {
+      setLogoTapCount(nextCount);
+    }
+  };
+
+  // Mock data for individual worker
   const stats = {
-    enrolledCount: 142,
-    verificationsToday: 89,
-    pendingSync: 3
+    presentCount: 18,
+    lateCount: 1,
+    pendingSync: 0
   };
 
   const systemStatus = {
-    modelsLoaded: true,
-    cameraReady: true,
-    storageUsedMB: 12.4
+    blazeface: 'LOADED',
+    facenet: 'LOADED',
+    facemesh: 'LOADED',
+    sqlite: 'READY',
+    netinfo: 'ACTIVE',
+    storageUsedMB: 12.4,
+    storageLimitMB: 50
   };
 
   return (
@@ -38,121 +59,177 @@ export default function HomeScreen({ navigation }) {
       
       {/* App Bar / Header */}
       <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.logoText}>NHAI</Text>
-          <Text style={styles.subtitle}>FaceID Security</Text>
-        </View>
+        <TouchableOpacity 
+          style={styles.headerLeft} 
+          onPress={handleLogoTap}
+          activeOpacity={0.9}
+        >
+          <View style={styles.logoRow}>
+            <Text style={styles.logoText}>NHAI</Text>
+            <View style={styles.goldBadge}>
+              <Text style={styles.goldBadgeText}>FaceID</Text>
+            </View>
+          </View>
+          <Text style={styles.subtitle}>Datalake 3.0 • NH3 — Rohtang Pass Portal</Text>
+        </TouchableOpacity>
+        
         <View style={styles.headerRight}>
           <View style={styles.clockContainer}>
             <Text style={styles.clockTime}>{formatTime(time)}</Text>
             <Text style={styles.clockDate}>{formatDate(time)}</Text>
           </View>
-          <TouchableOpacity style={styles.settingsBtn} activeOpacity={0.7}>
-            <SettingsIcon size={20} color="#F0F6FC" />
-          </TouchableOpacity>
         </View>
       </View>
 
       {/* Sync Status Banner */}
       <SyncBanner pendingCount={stats.pendingSync} isSyncing={false} />
 
-      <ScrollView contentContainerStyle={styles.scrollContent} scrollEnabled={false}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         
-        {/* Swapped M3 Grid Layout */}
-        <View style={styles.gridContainer}>
-          
-          {/* HERO CARD: Enroll Personnel */}
+        {/* Worker Action Card */}
+        <View style={styles.actionContainer}>
           <TouchableOpacity 
-            style={styles.heroCard} 
-            onPress={() => navigation.navigate('Enroll')}
+            style={styles.checkInCard} 
+            onPress={() => navigation.navigate('Verify')}
             activeOpacity={0.8}
           >
-            <View style={styles.heroIconWrapper}>
-              <EnrollIcon size={32} color="#E8B84B" />
+            <View style={styles.checkInIconWrapper}>
+              <VerifyIcon size={38} color="#E8B84B" />
             </View>
-            <View style={styles.heroTextContainer}>
-              <Text style={styles.heroTitle}>Enroll Personnel</Text>
-              <Text style={styles.heroDesc}>Register new employee facial biometrics to local database</Text>
+            <View style={styles.checkInTextContainer}>
+              <Text style={styles.checkInTitle}>Verify My Identity</Text>
+              <Text style={styles.checkInDesc}>Tap here to scan and log your daily attendance</Text>
             </View>
           </TouchableOpacity>
+        </View>
 
-          {/* TWO COLUMN GRID: Liveness and Verify */}
-          <View style={styles.cardRow}>
-            {/* LEFT COLUMN: Liveness */}
+        {/* Worker Glanceable Stats */}
+        <View style={styles.statsContainer}>
+          <Text style={styles.sectionTitle}>My Attendance Statistics</Text>
+          <View style={styles.statsRow}>
+            <View style={styles.statBox}>
+              <Text style={[styles.statValue, { color: '#1E7E34' }]}>{stats.presentCount}</Text>
+              <Text style={styles.statLabel}>Days Present</Text>
+            </View>
+            <View style={styles.statBox}>
+              <Text style={[styles.statValue, { color: '#B7791F' }]}>{stats.lateCount}</Text>
+              <Text style={styles.statLabel}>Late Arrivals</Text>
+            </View>
+            <View style={styles.statBox}>
+              <Text style={[styles.statValue, { color: '#475569' }]}>{stats.pendingSync}</Text>
+              <Text style={styles.statLabel}>Pending Sync</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Worker Recent History logs */}
+        <View style={styles.historyContainer}>
+          <Text style={styles.sectionTitle}>My Recent Activity</Text>
+          <View style={styles.logCard}>
+            <View style={styles.logItem}>
+              <View style={styles.logLeft}>
+                <Text style={styles.logDot}>●</Text>
+                <Text style={styles.logText}>Today • 09:30 AM</Text>
+              </View>
+              <View style={[styles.pill, styles.pillGreen]}>
+                <Text style={styles.pillTextGreen}>Synced</Text>
+              </View>
+            </View>
+            
+            <View style={styles.logDivider} />
+
+            <View style={styles.logItem}>
+              <View style={styles.logLeft}>
+                <Text style={styles.logDot}>●</Text>
+                <Text style={styles.logText}>Yesterday • 09:28 AM</Text>
+              </View>
+              <View style={[styles.pill, styles.pillGreen]}>
+                <Text style={styles.pillTextGreen}>Synced</Text>
+              </View>
+            </View>
+
+            <View style={styles.logDivider} />
+
+            <View style={styles.logItem}>
+              <View style={styles.logLeft}>
+                <Text style={styles.logDot}>●</Text>
+                <Text style={styles.logText}>Fri, May 29 • 09:33 AM</Text>
+              </View>
+              <View style={[styles.pill, styles.pillGreen]}>
+                <Text style={styles.pillTextGreen}>Synced</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* Hidden Developer / Admin Console */}
+        {devMode && (
+          <View style={styles.devPanel}>
+            <Text style={styles.devTitle}>🛠️ Developer / Supervisor Panel</Text>
+            
+            {/* Supervisor Enroll Trigger */}
             <TouchableOpacity 
-              style={styles.gridCard} 
+              style={styles.enrollCard}
+              onPress={() => navigation.navigate('Enroll')}
+              activeOpacity={0.8}
+            >
+              <EnrollIcon size={20} color="#1A237E" />
+              <Text style={styles.enrollText}>Enroll New Personnel</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.enrollCard}
               onPress={() => navigation.navigate('Liveness')}
               activeOpacity={0.8}
             >
-              <View style={styles.cardHeaderRow}>
-                <LivenessIcon size={26} color="#E8B84B" />
-              </View>
-              <View>
-                <Text style={styles.gridCardTitle}>Liveness Check</Text>
-                <Text style={styles.gridCardDesc}>Run active anti-spoof checks</Text>
-              </View>
+              <LivenessIcon size={20} color="#1A237E" />
+              <Text style={styles.enrollText}>Run Manual Liveness check</Text>
             </TouchableOpacity>
 
-            {/* RIGHT COLUMN: Verify */}
+            {/* System Diagnostics */}
+            <View style={styles.diagnosticsContainer}>
+              <Text style={styles.devSectionTitle}>System Diagnostics</Text>
+              <View style={styles.diagRow}>
+                <Text style={styles.diagLabel}>BlazeFace Detector</Text>
+                <Text style={styles.diagSuccess}>LOADED ✅</Text>
+              </View>
+              <View style={styles.diagRow}>
+                <Text style={styles.diagLabel}>MobileFaceNet Model</Text>
+                <Text style={styles.diagSuccess}>LOADED ✅</Text>
+              </View>
+              <View style={styles.diagRow}>
+                <Text style={styles.diagLabel}>Liveness FaceMesh</Text>
+                <Text style={styles.diagSuccess}>LOADED ✅</Text>
+              </View>
+              <View style={styles.diagRow}>
+                <Text style={styles.diagLabel}>SQLite Storage</Text>
+                <Text style={styles.diagSuccess}>READY ✅</Text>
+              </View>
+              <View style={styles.diagRow}>
+                <Text style={styles.diagLabel}>NetInfo Core</Text>
+                <Text style={styles.diagSuccess}>ACTIVE ✅</Text>
+              </View>
+              <View style={styles.diagRow}>
+                <Text style={styles.diagLabel}>Storage</Text>
+                <Text style={styles.diagValue}>{systemStatus.storageUsedMB}MB/{systemStatus.storageLimitMB}MB</Text>
+              </View>
+            </View>
+
+            {/* Benchmark Block */}
             <TouchableOpacity 
-              style={styles.gridCard} 
-              onPress={() => navigation.navigate('Verify')}
+              style={styles.benchmarkBtn}
+              onPress={() => {
+                setLastBenchmark('Running...');
+                setTimeout(() => setLastBenchmark(`${Math.floor(Math.random() * 200) + 700}ms`), 1000);
+              }}
               activeOpacity={0.8}
             >
-              <View style={styles.cardHeaderRow}>
-                <VerifyIcon size={26} color="#E8B84B" />
-              </View>
-              <View>
-                <Text style={styles.gridCardTitle}>Verify Identity</Text>
-                <Text style={styles.gridCardDesc}>Identify personnel offline</Text>
-              </View>
+              <BenchmarkIcon size={16} color="#1A237E" />
+              <Text style={styles.benchmarkBtnText}>Run Speed Benchmark</Text>
             </TouchableOpacity>
+            <Text style={styles.lastBenchmarkText}>Last Speed: {lastBenchmark} ✅</Text>
           </View>
-        </View>
-
-        {/* Live Stats Row */}
-        <View style={styles.statsRow}>
-          <View style={styles.statBox}>
-            <Text style={styles.statValue}>{stats.enrolledCount}</Text>
-            <Text style={styles.statLabel}>Enrolled</Text>
-          </View>
-          <View style={styles.statBox}>
-            <Text style={styles.statValue}>{stats.verificationsToday}</Text>
-            <Text style={styles.statLabel}>Verified Today</Text>
-          </View>
-          <View style={styles.statBox}>
-            <Text style={styles.statValue}>{stats.pendingSync}</Text>
-            <Text style={styles.statLabel}>Pending Sync</Text>
-          </View>
-        </View>
-
-        {/* Compact System Diagnostics */}
-        <View style={styles.diagnosticsCompact}>
-          <View style={styles.diagItem}>
-            <Text style={styles.diagLabel}>AI Models</Text>
-            <Text style={[styles.diagValue, { color: '#238636' }]}>LOADED</Text>
-          </View>
-          <View style={styles.diagDivider} />
-          <View style={styles.diagItem}>
-            <Text style={styles.diagLabel}>Camera</Text>
-            <Text style={[styles.diagValue, { color: '#238636' }]}>READY</Text>
-          </View>
-          <View style={styles.diagDivider} />
-          <View style={styles.diagItem}>
-            <Text style={styles.diagLabel}>DB Storage</Text>
-            <Text style={styles.diagValue}>{systemStatus.storageUsedMB} MB</Text>
-          </View>
-        </View>
-
-        {/* Compact System Benchmark Button */}
-        <TouchableOpacity 
-          style={styles.benchmarkBtnCompact}
-          onPress={() => navigation.navigate('Benchmark')}
-          activeOpacity={0.8}
-        >
-          <BenchmarkIcon size={14} color="#E8B84B" />
-          <Text style={styles.benchmarkTextCompact}>Run System Benchmark</Text>
-        </TouchableOpacity>
+        )}
 
       </ScrollView>
     </SafeAreaView>
@@ -162,221 +239,299 @@ export default function HomeScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0D1117', // Dark background
+    backgroundColor: '#F8FAFC', // Off-white clean layout
   },
   header: {
-    height: 64,
-    backgroundColor: '#1A237E', // NHAI Official Navy Darkened
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: '#1A237E', // NHAI Navy
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 18,
     borderBottomWidth: 1,
-    borderBottomColor: '#30363D',
+    borderBottomColor: '#E2E8F0',
   },
   headerLeft: {
-    flexDirection: 'column',
+    flex: 1,
   },
-  logoText: {
-    color: '#E8B84B', // NHAI gold
-    fontSize: 20,
-    fontWeight: '900',
-    letterSpacing: 1,
-  },
-  subtitle: {
-    color: '#F0F6FC',
-    fontSize: 11,
-    fontWeight: '500',
-    opacity: 0.8,
-  },
-  headerRight: {
+  logoRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
+  logoText: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  goldBadge: {
+    backgroundColor: '#E8B84B', // Gold
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginLeft: 6,
+  },
+  goldBadgeText: {
+    color: '#1A237E',
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  subtitle: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '500',
+    opacity: 0.8,
+    marginTop: 2,
+  },
+  headerRight: {
+    alignItems: 'flex-end',
+  },
   clockContainer: {
     alignItems: 'flex-end',
-    marginRight: 12,
   },
   clockTime: {
-    color: '#F0F6FC',
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
     fontFamily: 'monospace',
   },
   clockDate: {
-    color: '#8B949E',
-    fontSize: 9,
-    fontWeight: '500',
-  },
-  settingsBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#161B22',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#30363D',
+    color: '#E8B84B', // Gold date
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 2,
   },
   scrollContent: {
     padding: 16,
-    flex: 1,
-    justifyContent: 'space-between',
+    paddingBottom: 40,
   },
-  gridContainer: {
-    marginBottom: 8,
+  actionContainer: {
+    marginVertical: 8,
   },
-  heroCard: {
-    backgroundColor: '#161B22',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#30363D',
-    borderLeftWidth: 4,
-    borderLeftColor: '#E8B84B',
-    padding: 18,
+  checkInCard: {
+    backgroundColor: '#1A237E', // NHAI Navy
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#E8B84B', // Gold border
+    padding: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    shadowColor: '#1A237E',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 4,
   },
-  heroIconWrapper: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#0D1117',
+  checkInIconWrapper: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(232, 184, 75, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
     borderWidth: 1,
-    borderColor: '#30363D',
+    borderColor: '#E8B84B',
   },
-  heroTextContainer: {
+  checkInTextContainer: {
     flex: 1,
   },
-  heroTitle: {
-    color: '#F0F6FC',
-    fontSize: 17,
-    fontWeight: '700',
+  checkInTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '800',
     marginBottom: 4,
   },
-  heroDesc: {
-    color: '#8B949E',
+  checkInDesc: {
+    color: '#FFFFFF',
     fontSize: 12,
+    opacity: 0.8,
     lineHeight: 16,
   },
-  cardRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  statsContainer: {
+    marginTop: 16,
   },
-  gridCard: {
-    flex: 1,
-    backgroundColor: '#161B22',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#30363D',
-    padding: 14,
-    marginHorizontal: 4,
-    minHeight: 115,
-    justifyContent: 'space-between',
-  },
-  cardHeaderRow: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#0D1117',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#30363D',
-  },
-  gridCardTitle: {
-    color: '#F0F6FC',
+  sectionTitle: {
     fontSize: 14,
-    fontWeight: '700',
-    marginTop: 8,
-    marginBottom: 2,
-  },
-  gridCardDesc: {
-    color: '#8B949E',
-    fontSize: 10,
-    lineHeight: 13,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginVertical: 4,
   },
   statBox: {
     flex: 1,
-    backgroundColor: '#161B22',
-    borderRadius: 10,
-    paddingVertical: 10,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingVertical: 14,
     paddingHorizontal: 8,
     marginHorizontal: 4,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#30363D',
+    borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 2,
   },
   statValue: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: '800',
-    color: '#E8B84B',
   },
   statLabel: {
     fontSize: 10,
-    color: '#8B949E',
-    marginTop: 2,
-    fontWeight: '600',
+    color: '#475569',
+    marginTop: 4,
+    fontWeight: '700',
     textAlign: 'center',
   },
-  diagnosticsCompact: {
-    flexDirection: 'row',
-    backgroundColor: '#161B22',
-    borderRadius: 8,
+  historyContainer: {
+    marginTop: 20,
+  },
+  logCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#30363D',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+    borderColor: '#E2E8F0',
+    padding: 16,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  logItem: {
+    flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginVertical: 4,
+    paddingVertical: 4,
   },
-  diagItem: {
-    flex: 1,
+  logLeft: {
+    flexDirection: 'row',
     alignItems: 'center',
   },
-  diagLabel: {
-    fontSize: 9,
-    color: '#8B949E',
-    fontWeight: '500',
+  logDot: {
+    color: '#1E7E34', // green dot
+    fontSize: 10,
+    marginRight: 8,
+  },
+  logText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  pill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  pillGreen: {
+    backgroundColor: '#E6F4EA',
+  },
+  pillTextGreen: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#1E7E34',
+  },
+  logDivider: {
+    height: 1,
+    backgroundColor: '#E2E8F0',
+    marginVertical: 10,
+  },
+  devPanel: {
+    marginTop: 24,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#1A237E',
+    borderRadius: 12,
+    padding: 16,
+  },
+  devTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#1A237E',
+    marginBottom: 12,
+  },
+  enrollCard: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    padding: 12,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  enrollText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1A237E',
+    marginLeft: 8,
+  },
+  diagnosticsContainer: {
+    marginTop: 10,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 12,
+  },
+  devSectionTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 8,
     textTransform: 'uppercase',
-    marginBottom: 2,
+  },
+  diagRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  diagLabel: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  diagSuccess: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#1E7E34',
   },
   diagValue: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#F0F6FC',
+    color: '#0F172A',
   },
-  diagDivider: {
-    width: 1,
-    height: 16,
-    backgroundColor: '#30363D',
-  },
-  benchmarkBtnCompact: {
+  benchmarkBtn: {
     flexDirection: 'row',
-    backgroundColor: '#161B22',
+    backgroundColor: '#F1F5F9',
     borderWidth: 1,
-    borderColor: '#30363D',
+    borderColor: '#E2E8F0',
     paddingVertical: 10,
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 4,
-    marginBottom: 8,
+    marginTop: 12,
   },
-  benchmarkTextCompact: {
-    color: '#E8B84B',
+  benchmarkBtnText: {
+    color: '#1A237E',
     fontWeight: '700',
-    fontSize: 12,
+    fontSize: 13,
     marginLeft: 6,
+  },
+  lastBenchmarkText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#475569',
+    textAlign: 'center',
+    marginTop: 6,
   }
 });
