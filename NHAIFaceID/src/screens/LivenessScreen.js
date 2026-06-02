@@ -1,153 +1,177 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Animated } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, Animated, Switch } from 'react-native';
 import CameraView from '../components/CameraView';
-
-const CHALLENGES = [
-  { id: 'BLINK', text: 'PLEASE BLINK YOUR EYES' },
-  { id: 'TURN_LEFT', text: 'TURN HEAD LEFT' },
-  { id: 'SMILE', text: 'PLEASE SMILE' }
-];
+import { runPassiveLiveness } from '../services/livenessDetection';
 
 export default function LivenessScreen({ navigation }) {
-  const [activeChallenges, setActiveChallenges] = useState([]);
-  const [currentChallengeIndex, setCurrentChallengeIndex] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(15);
-  const [status, setStatus] = useState('PLAYING'); // PLAYING, PASSED_ONE, SUCCESS, FAILED
-  
-  const timerAnim = useState(new Animated.Value(100))[0];
+  const [isScanning, setIsScanning] = useState(true);
+  const [simulateSpoof, setSimulateSpoof] = useState(false);
+  const [livenessData, setLivenessData] = useState({
+    score: 0,
+    details: { texture: 0, reflection: 0, depth: 0 }
+  });
+
+  const textureWidth = useRef(new Animated.Value(0)).current;
+  const reflectionWidth = useRef(new Animated.Value(0)).current;
+  const depthWidth = useRef(new Animated.Value(0)).current;
+  const fusionWidth = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Pick 2 random challenges
-    const shuffled = [...CHALLENGES].sort(() => 0.5 - Math.random());
-    setActiveChallenges(shuffled.slice(0, 2));
-  }, []);
+    if (!isScanning) return;
 
-  useEffect(() => {
-    if (status !== 'PLAYING') return;
+    const interval = setInterval(async () => {
+      // Create mock frame and landmarks structure for testing
+      const mockFrame = { isSpoof: simulateSpoof };
+      const mockLandmarks = { isSpoof: simulateSpoof };
 
-    // Reset and start timer animation
-    timerAnim.setValue(100);
-    Animated.timing(timerAnim, {
-      toValue: 0,
-      duration: 15000,
-      useNativeDriver: false
-    }).start();
+      const result = await runPassiveLiveness(mockFrame, mockLandmarks);
+      setLivenessData(result);
 
-    const interval = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          setStatus('FAILED');
-          clearInterval(interval);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+      // Animate the status bars in real time
+      Animated.parallel([
+        Animated.timing(textureWidth, {
+          toValue: result.details.texture * 100,
+          duration: 200,
+          useNativeDriver: false
+        }),
+        Animated.timing(reflectionWidth, {
+          toValue: result.details.reflection * 100,
+          duration: 200,
+          useNativeDriver: false
+        }),
+        Animated.timing(depthWidth, {
+          toValue: result.details.depth * 100,
+          duration: 200,
+          useNativeDriver: false
+        }),
+        Animated.timing(fusionWidth, {
+          toValue: result.score * 100,
+          duration: 200,
+          useNativeDriver: false
+        })
+      ]).start();
+
+    }, 300); // Poll every 300ms to simulate live analysis
 
     return () => clearInterval(interval);
-  }, [currentChallengeIndex, status]);
+  }, [isScanning, simulateSpoof]);
 
-  const handleFaceDetected = (bbox, landmarks) => {
-    if (status !== 'PLAYING') return;
-
-    // Mocking the bridge to livenessDetection.js math logic
-    // For demo UI purposes, we simulate passing the challenge randomly after 3 seconds
-    if (timeLeft < 12) {
-      handleChallengePassed();
-    }
+  const toggleScan = () => {
+    setIsScanning(!isScanning);
   };
 
-  const handleChallengePassed = () => {
-    if (currentChallengeIndex === 0) {
-      setStatus('PASSED_ONE');
-      setTimeout(() => {
-        setCurrentChallengeIndex(1);
-        setTimeLeft(15);
-        setStatus('PLAYING');
-      }, 1000);
-    } else {
-      setStatus('SUCCESS');
-    }
+  const getStatusColor = (val) => {
+    if (val >= 75) return '#28a745'; // Green
+    if (val >= 60) return '#ffc107'; // Yellow/Orange
+    return '#dc3545'; // Red
   };
 
-  const retry = () => {
-    const shuffled = [...CHALLENGES].sort(() => 0.5 - Math.random());
-    setActiveChallenges(shuffled.slice(0, 2));
-    setCurrentChallengeIndex(0);
-    setTimeLeft(15);
-    setStatus('PLAYING');
-  };
-
-  // Determine timer bar color
-  let timerColor = '#28a745'; // Green
-  if (timeLeft <= 8) timerColor = '#fd7e14'; // Orange
-  if (timeLeft <= 3) timerColor = '#dc3545'; // Red
-
-  // Render Overlays
-  if (status === 'SUCCESS') {
-    return (
-      <View style={[styles.overlayContainer, { backgroundColor: '#28a745' }]}>
-        <Text style={styles.overlayText}>LIVENESS VERIFIED</Text>
-        <Text style={styles.scoreText}>Score: 98.4%</Text>
-        <TouchableOpacity style={styles.btn} onPress={() => navigation.navigate('Home')}>
-          <Text style={styles.btnText}>Done</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  if (status === 'FAILED') {
-    return (
-      <View style={[styles.overlayContainer, { backgroundColor: '#dc3545' }]}>
-        <Text style={styles.overlayText}>LIVENESS FAILED</Text>
-        <Text style={styles.scoreText}>Please retry</Text>
-        <TouchableOpacity style={styles.btn} onPress={retry}>
-          <Text style={styles.btnText}>Try Again</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  const currentChallenge = activeChallenges[currentChallengeIndex];
+  const statusColor = getStatusColor(livenessData.score * 100);
 
   return (
     <View style={styles.container}>
-      <CameraView isActive={status === 'PLAYING'} onFaceDetected={handleFaceDetected} />
-
-      {/* Challenge Instruction */}
-      {currentChallenge && (
-        <View style={styles.instructionBanner}>
-          <Text style={styles.instructionText}>{currentChallenge.text}</Text>
-        </View>
-      )}
-
-      {/* Face Guide Oval */}
-      <View style={styles.faceOvalWrapper}>
-         <View style={styles.faceOval} />
+      {/* Top Banner: Simulator Switch */}
+      <View style={styles.simulatorHeader}>
+        <Text style={styles.simulatorLabel}>Developer Demo: Force Spoof Attack (Simulate Photo)</Text>
+        <Switch
+          value={simulateSpoof}
+          onValueChange={setSimulateSpoof}
+          trackColor={{ false: '#767577', true: '#dc3545' }}
+          thumbColor={simulateSpoof ? '#fff' : '#f4f3f4'}
+        />
       </View>
 
-      {/* Flash Success Checkmark */}
-      {status === 'PASSED_ONE' && (
-        <View style={styles.checkmarkOverlay}>
-          <Text style={styles.checkmark}>✅</Text>
-        </View>
-      )}
+      <View style={styles.cameraContainer}>
+        <CameraView isActive={isScanning} onFaceDetected={() => {}} />
+        
+        {/* Real-time scanning grid overlay */}
+        {isScanning && (
+          <View style={[styles.gridOverlay, { borderColor: statusColor }]}>
+            <Text style={[styles.statusIndicatorText, { color: statusColor }]}>
+              {simulateSpoof ? '⚠️ SPOOF ATTACK SUSPECTED' : '✓ SECURE LIVE FACE'}
+            </Text>
+          </View>
+        )}
+      </View>
 
-      {/* Bottom Bar: Timer & Dots */}
-      <View style={styles.bottomBar}>
-        <View style={styles.timerTrack}>
-          <Animated.View style={[
-            styles.timerFill, 
-            { 
-              width: timerAnim.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }),
-              backgroundColor: timerColor 
-            }
-          ]} />
+      <View style={styles.dashboardContainer}>
+        <Text style={styles.dashboardTitle}>Security Telemetry (Passive Liveness)</Text>
+
+        {/* Meter 1: Texture */}
+        <View style={styles.meterContainer}>
+          <View style={styles.meterLabelRow}>
+            <Text style={styles.meterLabel}>Texture Analysis (LBP Moiré)</Text>
+            <Text style={styles.meterValue}>{(livenessData.details.texture * 100).toFixed(0)}%</Text>
+          </View>
+          <View style={styles.barTrack}>
+            <Animated.View style={[
+              styles.barFill, 
+              { 
+                width: textureWidth.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }),
+                backgroundColor: getStatusColor(livenessData.details.texture * 100)
+              }
+            ]} />
+          </View>
         </View>
-        <View style={styles.dotsRow}>
-          <Text style={styles.dot}>{currentChallengeIndex >= 0 ? '●' : '○'}</Text>
-          <Text style={styles.dot}>{currentChallengeIndex >= 1 ? '●' : '○'}</Text>
+
+        {/* Meter 2: Reflection */}
+        <View style={styles.meterContainer}>
+          <View style={styles.meterLabelRow}>
+            <Text style={styles.meterLabel}>Corneal Reflection (Specular)</Text>
+            <Text style={styles.meterValue}>{(livenessData.details.reflection * 100).toFixed(0)}%</Text>
+          </View>
+          <View style={styles.barTrack}>
+            <Animated.View style={[
+              styles.barFill, 
+              { 
+                width: reflectionWidth.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }),
+                backgroundColor: getStatusColor(livenessData.details.reflection * 100)
+              }
+            ]} />
+          </View>
         </View>
+
+        {/* Meter 3: Depth */}
+        <View style={styles.meterContainer}>
+          <View style={styles.meterLabelRow}>
+            <Text style={styles.meterLabel}>3D Landmark Depth Variance</Text>
+            <Text style={styles.meterValue}>{(livenessData.details.depth * 100).toFixed(0)}%</Text>
+          </View>
+          <View style={styles.barTrack}>
+            <Animated.View style={[
+              styles.barFill, 
+              { 
+                width: depthWidth.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }),
+                backgroundColor: getStatusColor(livenessData.details.depth * 100)
+              }
+            ]} />
+          </View>
+        </View>
+
+        {/* Divider */}
+        <View style={styles.divider} />
+
+        {/* Integrated Fused Score */}
+        <View style={styles.fusedScoreRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.fusedLabel}>Fused Anti-Spoofing Index</Text>
+            <Text style={[styles.fusedStatus, { color: statusColor }]}>
+              {livenessData.score >= 0.75 ? 'PASSED (Target >= 75%)' : 'BLOCKED (Low Score)'}
+            </Text>
+          </View>
+          <Text style={[styles.fusedValue, { color: statusColor }]}>
+            {(livenessData.score * 100).toFixed(1)}%
+          </Text>
+        </View>
+
+        <TouchableOpacity 
+          style={[styles.actionBtn, { backgroundColor: isScanning ? '#dc3545' : '#28a745' }]} 
+          onPress={toggleScan}
+        >
+          <Text style={styles.actionBtnText}>
+            {isScanning ? 'Pause Diagnostic Feed' : 'Resume Diagnostic Feed'}
+          </Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -158,99 +182,124 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
   },
-  instructionBanner: {
-    position: 'absolute',
-    top: 60,
-    width: '100%',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingVertical: 12,
-  },
-  instructionText: {
-    color: '#FFD700',
-    fontSize: 32, // Note: scaled down slightly from 48sp for standard screens
-    fontWeight: 'bold',
-    textAlign: 'center',
-    textShadowColor: '#000',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 5,
-  },
-  faceOvalWrapper: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    pointerEvents: 'none', // Allow touches to pass through
-  },
-  faceOval: {
-    width: 250,
-    height: 350,
-    borderWidth: 4,
-    borderColor: 'rgba(255,255,255,0.3)',
-    borderRadius: 200,
-    borderStyle: 'dashed',
-  },
-  bottomBar: {
-    position: 'absolute',
-    bottom: 40,
-    width: '100%',
-    alignItems: 'center',
-    paddingHorizontal: 32,
-  },
-  timerTrack: {
-    width: '100%',
-    height: 12,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 6,
-    overflow: 'hidden',
-    marginBottom: 16,
-  },
-  timerFill: {
-    height: '100%',
-  },
-  dotsRow: {
+  simulatorHeader: {
     flexDirection: 'row',
-  },
-  dot: {
-    color: '#FFF',
-    fontSize: 24,
-    marginHorizontal: 8,
-  },
-  overlayContainer: {
-    flex: 1,
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 24,
+    backgroundColor: '#1a1a1a',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderColor: '#333'
   },
-  overlayText: {
-    color: '#FFF',
-    fontSize: 36,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 16,
+  simulatorLabel: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500'
   },
-  scoreText: {
-    color: '#FFF',
-    fontSize: 24,
-    marginBottom: 40,
+  cameraContainer: {
+    flex: 1,
+    position: 'relative'
   },
-  btn: {
-    backgroundColor: '#FFF',
-    paddingHorizontal: 40,
-    paddingVertical: 16,
-    borderRadius: 30,
+  gridOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    borderWidth: 4,
+    margin: 20,
+    borderRadius: 20,
+    borderStyle: 'dashed',
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    paddingVertical: 20,
+    backgroundColor: 'rgba(0,0,0,0.1)'
   },
-  btnText: {
-    color: '#000',
+  statusIndicatorText: {
     fontSize: 18,
     fontWeight: 'bold',
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    overflow: 'hidden',
+    textAlign: 'center'
   },
-  checkmarkOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
+  dashboardContainer: {
+    height: 410,
+    backgroundColor: '#151515',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  dashboardTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 16,
+    textAlign: 'center'
+  },
+  meterContainer: {
+    marginBottom: 14,
+  },
+  meterLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  meterLabel: {
+    color: '#aaa',
+    fontSize: 13,
+  },
+  meterValue: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  barTrack: {
+    height: 8,
+    width: '100%',
+    backgroundColor: '#333',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  barFill: {
+    height: '100%',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#333',
+    marginVertical: 14,
+  },
+  fusedScoreRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(40,167,69,0.4)',
+    marginBottom: 20,
   },
-  checkmark: {
-    fontSize: 100,
+  fusedLabel: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600'
+  },
+  fusedStatus: {
+    fontSize: 12,
+    marginTop: 2,
+    fontWeight: '500'
+  },
+  fusedValue: {
+    fontSize: 32,
+    fontWeight: 'bold',
+  },
+  actionBtn: {
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  actionBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   }
 });

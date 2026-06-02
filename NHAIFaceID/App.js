@@ -1,41 +1,40 @@
-import 'react-native-gesture-handler';
+import { registerTFJSPlatform } from './src/services/tfjsPlatform';
+registerTFJSPlatform();
 import React, { useEffect } from 'react';
+import { LogBox } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
-import { initDB } from './src/services/localStorage';
+import NHAIFaceSDK from './src/NHAIFaceSDK';
 
-// Screens
+LogBox.ignoreLogs(['Failed to initialize local TFJS Face Detector']);
+
 import HomeScreen from './src/screens/HomeScreen';
 import EnrollScreen from './src/screens/EnrollScreen';
 import LivenessScreen from './src/screens/LivenessScreen';
 import VerifyScreen from './src/screens/VerifyScreen';
 import BenchmarkScreen from './src/screens/BenchmarkScreen';
+import UserListScreen from './src/screens/UserListScreen';
 
 const Stack = createStackNavigator();
 
 export default function App() {
   useEffect(() => {
-    initDB().catch(console.error);
+    NHAIFaceSDK.initialize().catch(console.error);
   }, []);
-
   return (
     <NavigationContainer>
       <Stack.Navigator 
         initialRouteName="Home"
         screenOptions={{
-          headerStyle: {
-            backgroundColor: '#003087', // NHAI Blue
-          },
-          headerTintColor: '#FFD700', // NHAI Yellow
-          headerTitleStyle: {
-            fontWeight: 'bold',
-          },
+          headerStyle: { backgroundColor: '#003087' },
+          headerTintColor: '#FFD700',
+          headerTitleStyle: { fontWeight: 'bold' },
         }}
       >
         <Stack.Screen 
           name="Home" 
           component={HomeScreen} 
-          options={{ title: 'Datalake 3.0', headerShown: false }} 
+          options={{ title: 'Datalake 3.0 — Field Auth' }} 
         />
         <Stack.Screen 
           name="Enroll" 
@@ -56,6 +55,11 @@ export default function App() {
           name="Benchmark" 
           component={BenchmarkScreen} 
           options={{ title: 'System Benchmark' }} 
+        />
+        <Stack.Screen 
+          name="UserList" 
+          component={UserListScreen} 
+          options={{ title: 'Biometric Registry' }} 
         />
       </Stack.Navigator>
     </NavigationContainer>

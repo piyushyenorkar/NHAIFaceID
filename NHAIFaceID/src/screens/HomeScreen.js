@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import Svg, { Rect, Defs, LinearGradient, Stop, Path } from 'react-native-svg';
 import SyncBanner from '../components/SyncBanner';
 import { EnrollIcon, LivenessIcon, VerifyIcon, BenchmarkIcon } from '../components/Icons';
+import { getDBConnection } from '../services/localStorage';
 
 // Custom header background using SVG for gradient and road graphics
 function HeaderBackground() {
@@ -45,12 +47,40 @@ function ChevronRight({ size = 18, color = '#94A3B8' }) {
 }
 
 export default function HomeScreen({ navigation }) {
-  // Mock data for UI layout
-  const stats = {
-    enrolledCount: 142,
-    verificationsToday: 89,
-    pendingSync: 3
+  const [stats, setStats] = useState({
+    enrolledCount: 0,
+    verificationsToday: 0,
+    pendingSync: 0
+  });
+
+  const loadStats = async () => {
+    try {
+      const db = await getDBConnection();
+      
+      const [enrollRes] = await db.executeSql('SELECT COUNT(*) as count FROM enrolled_faces');
+      const enrolledCount = enrollRes.rows.item(0).count;
+
+      const [syncRes] = await db.executeSql('SELECT COUNT(*) as count FROM verification_log WHERE synced = 0');
+      const pendingSync = syncRes.rows.item(0).count;
+
+      // Verifications today
+      const [todayRes] = await db.executeSql("SELECT COUNT(*) as count FROM verification_log WHERE timestamp >= date('now')");
+      const verificationsToday = todayRes.rows.item(0).count;
+
+      setStats({ enrolledCount, verificationsToday, pendingSync });
+    } catch (e) {
+      console.log('[HomeScreen] Failed to load stats:', e);
+    }
   };
+
+  useFocusEffect(
+    useCallback(() => {
+      loadStats();
+      // Optional: Polling every 5s while focused to update sync status automatically
+      const interval = setInterval(loadStats, 5000);
+      return () => clearInterval(interval);
+    }, [])
+  );
 
   const systemStatus = {
     modelsLoaded: true,
@@ -78,7 +108,6 @@ export default function HomeScreen({ navigation }) {
 
         {/* Action Cards */}
         <View style={styles.actionsContainer}>
-
           <TouchableOpacity
             style={styles.card}
             onPress={() => navigation.navigate('Enroll')}
@@ -128,21 +157,23 @@ export default function HomeScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* Live Stats Dashboard Row */}
-        <View style={styles.statsRow}>
-          <View style={styles.statBox}>
-            <Text style={styles.statValue}>{stats.enrolledCount}</Text>
-            <Text style={styles.statLabel}>Enrolled</Text>
+        {/* Live Stats Row */}
+        <TouchableOpacity onPress={() => navigation.navigate('UserList')} activeOpacity={0.7}>
+          <View style={styles.statsRow}>
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>{stats.enrolledCount}</Text>
+              <Text style={styles.statLabel}>Enrolled</Text>
+            </View>
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>{stats.verificationsToday}</Text>
+              <Text style={styles.statLabel}>Verified Today</Text>
+            </View>
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>{stats.pendingSync}</Text>
+              <Text style={styles.statLabel}>Pending Sync</Text>
+            </View>
           </View>
-          <View style={styles.statBox}>
-            <Text style={styles.statValue}>{stats.verificationsToday}</Text>
-            <Text style={styles.statLabel}>Verified Today</Text>
-          </View>
-          <View style={styles.statBox}>
-            <Text style={styles.statValue}>{stats.pendingSync}</Text>
-            <Text style={styles.statLabel}>Pending Sync</Text>
-          </View>
-        </View>
+        </TouchableOpacity>
 
         {/* Redesigned System Status & Storage Panel */}
         <View style={styles.panelContainer}>
@@ -187,7 +218,6 @@ export default function HomeScreen({ navigation }) {
           <BenchmarkIcon size={18} color="#0B3C95" />
           <Text style={styles.benchmarkText}>Run System Benchmark</Text>
         </TouchableOpacity>
-
       </ScrollView>
     </View>
   );
