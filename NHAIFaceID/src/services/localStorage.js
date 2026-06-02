@@ -25,12 +25,29 @@ export async function initDB() {
       employee_id TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
       embedding TEXT NOT NULL,
+      depth_variance REAL DEFAULT 0.0,
+      face_ratios TEXT DEFAULT '{}',
       thumbnail_path TEXT,
       enrolled_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       enrolled_by TEXT,
       synced BOOLEAN DEFAULT 0
     );
   `);
+
+  // Run migrations in case columns do not exist on pre-existing databases
+  try {
+    await db.executeSql(`ALTER TABLE enrolled_faces ADD COLUMN depth_variance REAL DEFAULT 0.0;`);
+    console.log('[SQLite Migration] Added depth_variance column');
+  } catch (e) {
+    // Column already exists, safe to ignore
+  }
+
+  try {
+    await db.executeSql(`ALTER TABLE enrolled_faces ADD COLUMN face_ratios TEXT DEFAULT '{}';`);
+    console.log('[SQLite Migration] Added face_ratios column');
+  } catch (e) {
+    // Column already exists, safe to ignore
+  }
 
   // Table 2: verification_log
   await db.executeSql(`
@@ -67,7 +84,7 @@ export async function initDB() {
 export async function getLatestEnrolledFace() {
   try {
     const db = await getDBConnection();
-    const [results] = await db.executeSql(`SELECT employee_id, name FROM enrolled_faces ORDER BY id DESC LIMIT 1`);
+    const [results] = await db.executeSql(`SELECT employee_id, name, depth_variance, face_ratios FROM enrolled_faces ORDER BY id DESC LIMIT 1`);
     if (results.rows.length > 0) {
       return results.rows.item(0);
     }
@@ -78,13 +95,14 @@ export async function getLatestEnrolledFace() {
   }
 }
 
-export async function insertEnrolledFace(employeeId, name, embeddingArray) {
+export async function insertEnrolledFace(employeeId, name, embeddingArray, depthVariance = 0.0, faceRatios = {}) {
   const db = await getDBConnection();
   const embeddingStr = JSON.stringify(embeddingArray);
+  const faceRatiosStr = JSON.stringify(faceRatios);
   
   await db.executeSql(
-    `INSERT INTO enrolled_faces (employee_id, name, embedding) VALUES (?, ?, ?)`,
-    [employeeId, name, embeddingStr]
+    `INSERT INTO enrolled_faces (employee_id, name, embedding, depth_variance, face_ratios) VALUES (?, ?, ?, ?, ?)`,
+    [employeeId, name, embeddingStr, depthVariance, faceRatiosStr]
   );
 }
 

@@ -1,65 +1,146 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert } from 'react-native';
 import CameraView from '../components/CameraView';
-import { generateEmbedding } from '../services/faceRecognition';
-import { insertEnrolledFace } from '../services/localStorage';
+import NHAIFaceSDK from '../NHAIFaceSDK';
+import RNFS from 'react-native-fs';
+import { decodeJpeg } from '@tensorflow/tfjs-react-native/dist/decode_image';
+
+import { Buffer } from 'buffer';
+
+function base64ToUint8Array(base64) {
+  return new Uint8Array(Buffer.from(base64, 'base64'));
+}
 
 export default function EnrollScreen({ navigation }) {
   const [employeeId, setEmployeeId] = useState('');
   const [name, setName] = useState('');
-  const [isCapturing, setIsCapturing] = useState(false);
-  const [captureProgress, setCaptureProgress] = useState(0); // 0 to 5
-  const [enrolled, setEnrolled] = useState(false);
+  const [enrollStatus, setEnrollStatus] = useState('IDLE'); // IDLE, SCANNING, PROCESSING, SUCCESS
+  const [detectedFace, setDetectedFace] = useState(null);
 
-  // Store the 5 raw embeddings to average them
-  const embeddingsBuffer = useRef([]);
+  // Scanning progress states
+  const [progress, setProgress] = useState(0);
+  const [statusMessage, setStatusMessage] = useState('Looking for face...');
+  
+  const cameraViewRef = useRef(null);
+  const lastDetectedRef = useRef(0);
+  const progressIntervalRef = useRef(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const startEnrollment = () => {
     if (!employeeId.trim() || !name.trim()) {
       Alert.alert('Validation Error', 'Employee ID and Full Name are mandatory.');
       return;
     }
-    setIsCapturing(true);
-    setCaptureProgress(0);
-    embeddingsBuffer.current = [];
+    setProgress(0);
+    setStatusMessage('Align face inside guide oval...');
+    lastDetectedRef.current = 0;
+    setDetectedFace(null);
+    setEnrollStatus('SCANNING');
   };
 
-  const handleFaceDetected = async (bbox, landmarks, frameTensor) => {
-    if (!isCapturing || captureProgress >= 5) return;
-    if (!bbox) return; // Must have a physical face bounding box
+  // Called 30 times a second from CameraView
+  const handleFaceDetected = (bbox, landmarks) => {
+    if (enrollStatus !== 'SCANNING') return;
+    lastDetectedRef.current = Date.now();
+  };
 
-    try {
-      // Mocked frame extraction - in reality we pass the frameTensor
-      const embedding = await generateEmbedding(frameTensor);
-      embeddingsBuffer.current.push(embedding);
-      
-      setCaptureProgress(prev => prev + 1);
-
-      if (embeddingsBuffer.current.length === 5) {
-        setIsCapturing(false);
-        
-        // Average the 5 embeddings (each is a 128-d array)
-        let masterEmbedding = new Array(128).fill(0);
-        for (let i = 0; i < 5; i++) {
-          for (let j = 0; j < 128; j++) {
-            masterEmbedding[j] += embeddingsBuffer.current[i][j];
-          }
-        }
-        for (let j = 0; j < 128; j++) {
-          masterEmbedding[j] = masterEmbedding[j] / 5;
-        }
-
-        // Save to SQLite
-        await insertEnrolledFace(employeeId, name, masterEmbedding);
-
-        setEnrolled(true);
-      }
-    } catch (err) {
-      console.error('Error extracting embedding', err);
+  // Progress scanning loop (2 seconds total)
+  useEffect(() => {
+    if (enrollStatus !== 'SCANNING') {
+      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+      return;
     }
-  };
 
-  if (enrolled) {
+    lastDetectedRef.current = 0;
+    progressIntervalRef.current = setInterval(async () => {
+      const faceDetected = Date.now() - lastDetectedRef.current < 800;
+
+      if (faceDetected) {
+        setProgress(prev => {
+          const nextProgress = prev + 5;
+          
+          if (nextProgress < 35) {
+            setStatusMessage(`Mapping face contours: ${nextProgress}%`);
+          } else if (nextProgress < 70) {
+            setStatusMessage(`Passive liveness security audit: ${nextProgress}%`);
+          } else if (nextProgress < 100) {
+            setStatusMessage(`Extracting biometric embedding: ${nextProgress}%`);
+          } else if (nextProgress >= 100) {
+            clearInterval(progressIntervalRef.current);
+            if (isMountedRef.current) setEnrollStatus('PROCESSING');
+            
+            // Defer execution by 100ms to allow React to paint the PROCESSING state
+            setTimeout(() => {
+              (async () => {
+                let tensor = null;
+                try {
+                  if (cameraViewRef.current) {
+                    const photoPath = await cameraViewRef.current.capturePhoto();
+                    if (photoPath) {
+                      const cleanPath = photoPath.replace(/^file:\/\//, '');
+                      const base64Data = await RNFS.readFile(cleanPath, 'base64');
+                      const rawBytes = base64ToUint8Array(base64Data);
+                      tensor = decodeJpeg(rawBytes);
+                      
+                      const result = await NHAIFaceSDK.enroll(employeeId, name, tensor);
+                      
+                      if (isMountedRef.current) {
+                        setDetectedFace({
+                          bbox: result.bbox,
+                          landmarks: result.landmarks,
+                          color: '#28a745'
+                        });
+                        
+                        setTimeout(() => {
+                          if (isMountedRef.current) setEnrollStatus('SUCCESS');
+                        }, 1500);
+                      }
+                    } else {
+                      throw new Error('Camera captured empty photo path');
+                    }
+                  } else {
+                    throw new Error('Camera is not active');
+                  }
+                } catch (err) {
+                  console.error('[EnrollScreen] Enrollment failed:', err);
+                  if (isMountedRef.current) {
+                    setEnrollStatus('IDLE');
+                    Alert.alert(
+                      'Enrollment Failed ❌',
+                      err.message || 'Face enrollment failed. Please hold still and try again.',
+                      [{ text: 'Retry', onPress: () => { if (isMountedRef.current) { setEnrollStatus('SCANNING'); setProgress(0); setStatusMessage('Align face inside guide oval...'); } } }]
+                    );
+                  }
+                } finally {
+                  if (tensor) {
+                    tensor.dispose();
+                  }
+                }
+              })();
+            }, 100);
+            return 100;
+          }
+          return nextProgress;
+        });
+      } else {
+        setStatusMessage('Face lost. Align face in guides...');
+        setProgress(prev => Math.max(0, prev - 10)); // decay progress if face lost
+      }
+    }, 100); // 20 increments of 5% = 2000ms (2 seconds)
+
+    return () => {
+      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+    };
+  }, [enrollStatus, employeeId, name]);
+
+  if (enrollStatus === 'SUCCESS') {
     return (
       <View style={styles.successContainer}>
         <Text style={styles.successTitle}>✅ Enrollment Successful</Text>
@@ -73,16 +154,11 @@ export default function EnrollScreen({ navigation }) {
         >
           <Text style={styles.doneBtnText}>Return Home</Text>
         </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={styles.viewAllBtn} 
-          onPress={() => Alert.alert('Notice', 'Navigation to Enrolled List')}
-        >
-          <Text style={styles.viewAllBtnText}>View All Enrolled</Text>
-        </TouchableOpacity>
       </View>
     );
   }
+
+  const isCapturing = enrollStatus === 'SCANNING';
 
   return (
     <View style={styles.container}>
@@ -94,7 +170,7 @@ export default function EnrollScreen({ navigation }) {
           placeholderTextColor="#666"
           value={employeeId}
           onChangeText={setEmployeeId}
-          editable={!isCapturing}
+          editable={enrollStatus === 'IDLE'}
         />
         <TextInput 
           style={[styles.input, { color: '#000' }]}
@@ -102,10 +178,10 @@ export default function EnrollScreen({ navigation }) {
           placeholderTextColor="#666"
           value={name}
           onChangeText={setName}
-          editable={!isCapturing}
+          editable={enrollStatus === 'IDLE'}
         />
 
-        {!isCapturing && (
+        {enrollStatus === 'IDLE' && (
           <TouchableOpacity style={styles.startBtn} onPress={startEnrollment}>
             <Text style={styles.startBtnText}>Start Enrollment</Text>
           </TouchableOpacity>
@@ -115,18 +191,36 @@ export default function EnrollScreen({ navigation }) {
       {/* Camera Area */}
       <View style={styles.cameraWrapper}>
         <CameraView 
-          isActive={isCapturing}
+          ref={cameraViewRef}
+          isActive={enrollStatus !== 'SUCCESS'}
           onFaceDetected={handleFaceDetected}
+          detectedFace={detectedFace}
         />
         
         {/* Progress Overlay */}
-        {isCapturing && (
+        {enrollStatus === 'SCANNING' && (
           <View style={styles.progressOverlay}>
             <Text style={styles.progressText}>
-              Capturing... {captureProgress}/5
+              {statusMessage}
             </Text>
+            <View style={styles.progressBarTrack}>
+              <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
+            </View>
             <Text style={styles.instructionText}>
-              Position your face in the oval and hold still
+              Verifying live 3D texture & mathematical face contours
+            </Text>
+          </View>
+        )}
+
+        {/* Processing Overlay */}
+        {enrollStatus === 'PROCESSING' && (
+          <View style={styles.processingOverlay}>
+            <Text style={styles.processingTitle}>⚙️ Biometric Audit in Progress</Text>
+            <Text style={styles.processingText}>
+              Analyzing passive liveness cues & extracting offline face template.
+            </Text>
+            <Text style={styles.processingSubtext}>
+              Please hold still, this takes a few seconds...
             </Text>
           </View>
         )}
@@ -156,6 +250,25 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     fontSize: 16,
   },
+  simulatorCard: {
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ced4da',
+    marginBottom: 16,
+  },
+  simulatorRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  simulatorLabel: {
+    fontSize: 13,
+    color: '#333',
+    fontWeight: '500',
+  },
   startBtn: {
     backgroundColor: '#003087',
     borderRadius: 8,
@@ -175,21 +288,37 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 20,
     alignSelf: 'center',
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingVertical: 12,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    paddingVertical: 14,
     paddingHorizontal: 24,
-    borderRadius: 30,
+    borderRadius: 20,
     alignItems: 'center',
+    width: '90%'
   },
   progressText: {
     color: '#FFD700',
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  progressBarTrack: {
+    width: '100%',
+    height: 6,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 3,
+    marginTop: 10,
+    marginBottom: 6,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#FFD700',
   },
   instructionText: {
     color: '#FFF',
-    fontSize: 14,
+    fontSize: 11,
     marginTop: 4,
+    textAlign: 'center',
   },
   successContainer: {
     flex: 1,
@@ -217,25 +346,46 @@ const styles = StyleSheet.create({
   },
   doneBtn: {
     backgroundColor: '#003087',
-    paddingHorizontal: 32,
+    paddingHorizontal: 40,
     paddingVertical: 16,
     borderRadius: 8,
-    marginBottom: 16,
   },
   doneBtnText: {
     color: '#FFD700',
     fontSize: 18,
     fontWeight: 'bold',
   },
-  viewAllBtn: {
-    backgroundColor: '#6c757d',
-    paddingHorizontal: 32,
-    paddingVertical: 16,
-    borderRadius: 8,
+  processingOverlay: {
+    position: 'absolute',
+    top: 20,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0, 48, 135, 0.95)', // Premium NHAI Blue
+    paddingVertical: 20,
+    paddingHorizontal: 24,
+    borderRadius: 20,
+    alignItems: 'center',
+    width: '90%',
+    borderWidth: 1.5,
+    borderColor: '#FFD700', // Premium NHAI Yellow border
   },
-  viewAllBtnText: {
-    color: '#FFF',
-    fontSize: 18,
+  processingTitle: {
+    color: '#FFD700',
+    fontSize: 16,
     fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  processingText: {
+    color: '#FFF',
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 6,
+  },
+  processingSubtext: {
+    color: '#FFD700',
+    fontSize: 11,
+    fontStyle: 'italic',
+    textAlign: 'center',
   }
 });

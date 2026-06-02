@@ -8,7 +8,7 @@ const MODELS_TO_DOWNLOAD = [
   {
     name: 'MobileFaceNet.tflite',
     // Using a reliable public raw URL for the weights
-    url: 'https://raw.githubusercontent.com/sirius-ai/MobileFaceNet_TF/master/arch/pretrained_model/MobileFaceNet.tflite',
+    url: 'https://github.com/MCarlomagno/FaceRecognitionAuth/raw/master/assets/mobilefacenet.tflite',
   },
   {
     name: 'face_detection_short_range.tflite',
@@ -19,6 +19,11 @@ const MODELS_TO_DOWNLOAD = [
     name: 'face_landmark_68.tflite',
     // MediaPipe face landmark
     url: 'https://storage.googleapis.com/mediapipe-assets/face_landmark.tflite',
+  },
+  {
+    name: 'MiniFASNetV2.onnx',
+    // Silent Face Anti-Spoofing Model
+    url: 'https://github.com/yakhyo/face-anti-spoofing/releases/download/weights/MiniFASNetV2.onnx',
   }
 ];
 
