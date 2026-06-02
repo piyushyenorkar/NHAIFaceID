@@ -24,11 +24,9 @@ export default function App() {
         initialRouteName="Home"
         screenOptions={{
           headerStyle: {
-            backgroundColor: '#1A237E', // NHAI Navy
-            borderBottomWidth: 1,
-            borderBottomColor: '#30363D',
+            backgroundColor: '#003087', // NHAI Blue
           },
-          headerTintColor: '#E8B84B', // NHAI Gold
+          headerTintColor: '#FFD700', // NHAI Yellow
           headerTitleStyle: {
             fontWeight: 'bold',
           },

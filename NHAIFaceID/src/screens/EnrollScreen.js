@@ -31,12 +31,12 @@ export default function EnrollScreen({ navigation }) {
       // Mocked frame extraction - in reality we pass the frameTensor
       const embedding = await generateEmbedding(frameTensor);
       embeddingsBuffer.current.push(embedding);
-      
+
       setCaptureProgress(prev => prev + 1);
 
       if (embeddingsBuffer.current.length === 5) {
         setIsCapturing(false);
-        
+
         // Average the 5 embeddings (each is a 128-d array)
         let masterEmbedding = new Array(128).fill(0);
         for (let i = 0; i < 5; i++) {
@@ -65,16 +65,16 @@ export default function EnrollScreen({ navigation }) {
         <Text style={styles.successText}>Name: {name}</Text>
         <Text style={styles.successText}>Employee ID: {employeeId}</Text>
         <Text style={styles.timestamp}>Enrolled on: {new Date().toLocaleString()}</Text>
-        
-        <TouchableOpacity 
-          style={styles.doneBtn} 
+
+        <TouchableOpacity
+          style={styles.doneBtn}
           onPress={() => navigation.navigate('Home')}
         >
           <Text style={styles.doneBtnText}>Return Home</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={styles.viewAllBtn} 
+        <TouchableOpacity
+          style={styles.viewAllBtn}
           onPress={() => Alert.alert('Notice', 'Navigation to Enrolled List')}
         >
           <Text style={styles.viewAllBtnText}>View All Enrolled</Text>
@@ -87,7 +87,7 @@ export default function EnrollScreen({ navigation }) {
     <View style={styles.container}>
       {/* Top Input Form */}
       <View style={styles.formContainer}>
-        <TextInput 
+        <TextInput
           style={[styles.input, { color: '#000' }]}
           placeholder="Employee ID"
           placeholderTextColor="#666"
@@ -95,7 +95,7 @@ export default function EnrollScreen({ navigation }) {
           onChangeText={setEmployeeId}
           editable={!isCapturing}
         />
-        <TextInput 
+        <TextInput
           style={[styles.input, { color: '#000' }]}
           placeholder="Full Name"
           placeholderTextColor="#666"
@@ -113,11 +113,11 @@ export default function EnrollScreen({ navigation }) {
 
       {/* Camera Area */}
       <View style={styles.cameraWrapper}>
-        <CameraView 
+        <CameraView
           isActive={isCapturing}
           onFaceDetected={handleFaceDetected}
         />
-        
+
         {/* Progress Overlay */}
         {isCapturing && (
           <View style={styles.progressOverlay}>
