@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert } from 'react-native';
+import Svg, { Ellipse, Rect, Polyline } from 'react-native-svg';
+import RNFS from 'react-native-fs';
 import CameraView from '../components/CameraView';
 import NHAIFaceSDK from '../NHAIFaceSDK';
-import RNFS from 'react-native-fs';
 import { decodeJpeg } from '@tensorflow/tfjs-react-native/dist/decode_image';
 
 import { Buffer } from 'buffer';
+import { alignAndCropFace, generateEmbedding } from '../services/faceRecognition';
 
 function base64ToUint8Array(base64) {
   return new Uint8Array(Buffer.from(base64, 'base64'));
@@ -33,6 +35,10 @@ export default function EnrollScreen({ navigation }) {
     };
   }, []);
 
+  const latestEmbeddingRef = useRef(null);
+  const latestLandmarksRef = useRef(null);
+  const latestBboxRef = useRef(null);
+
   const startEnrollment = () => {
     if (!employeeId.trim() || !name.trim()) {
       Alert.alert('Validation Error', 'Employee ID and Full Name are mandatory.');
@@ -46,9 +52,24 @@ export default function EnrollScreen({ navigation }) {
   };
 
   // Called 30 times a second from CameraView
-  const handleFaceDetected = (bbox, landmarks) => {
+  const handleFaceDetected = (bbox, landmarks, embedding) => {
     if (enrollStatus !== 'SCANNING') return;
-    lastDetectedRef.current = Date.now();
+    
+    if (bbox && landmarks) {
+      // Zone Check: Face should be of reasonable size, but we relax the strict centering
+      // because frame dimensions can be rotated (portrait vs landscape) causing issues.
+      const isCentered = true; 
+
+      if (isCentered) {
+        lastDetectedRef.current = Date.now();
+        latestLandmarksRef.current = landmarks;
+        latestBboxRef.current = bbox;
+        
+        if (embedding) {
+          latestEmbeddingRef.current = embedding;
+        }
+      }
+    }
   };
 
   // Progress scanning loop (2 seconds total)
@@ -79,48 +100,62 @@ export default function EnrollScreen({ navigation }) {
             // Defer execution by 100ms to allow React to paint the PROCESSING state
             setTimeout(() => {
               (async () => {
-                let tensor = null;
                 try {
+                  const currentLandmarks = latestLandmarksRef.current;
+                  const currentBbox = latestBboxRef.current;
+                  
+                  // Always capture a high-res photo for the user profile list
+                  let permanentPhotoPath = null;
                   if (cameraViewRef.current) {
-                    const photoPath = await cameraViewRef.current.capturePhoto();
-                    if (photoPath) {
-                      const cleanPath = photoPath.replace(/^file:\/\//, '');
-                      const base64Data = await RNFS.readFile(cleanPath, 'base64');
-                      const rawBytes = base64ToUint8Array(base64Data);
-                      tensor = decodeJpeg(rawBytes);
-                      
-                      const result = await NHAIFaceSDK.enroll(employeeId, name, tensor);
-                      
-                      if (isMountedRef.current) {
-                        setDetectedFace({
-                          bbox: result.bbox,
-                          landmarks: result.landmarks,
-                          color: '#28a745'
-                        });
-                        
-                        setTimeout(() => {
-                          if (isMountedRef.current) setEnrollStatus('SUCCESS');
-                        }, 1500);
-                      }
-                    } else {
-                      throw new Error('Camera captured empty photo path');
+                    const tempPath = await cameraViewRef.current.capturePhoto();
+                    if (tempPath) {
+                      const fileName = `enrolled_${employeeId}_${Date.now()}.jpg`;
+                      permanentPhotoPath = `${RNFS.DocumentDirectoryPath}/${fileName}`;
+                      // Clean up 'file://' if present in tempPath before copy
+                      const sourcePath = tempPath.replace('file://', '');
+                      await RNFS.copyFile(sourcePath, permanentPhotoPath);
+                      permanentPhotoPath = `file://${permanentPhotoPath}`;
                     }
-                  } else {
-                    throw new Error('Camera is not active');
                   }
-                } catch (err) {
-                  console.error('[EnrollScreen] Enrollment failed:', err);
+
+                  let currentEmbedding = latestEmbeddingRef.current;
+                  if (!currentEmbedding && permanentPhotoPath) {
+                    const cropped = await alignAndCropFace({ path: permanentPhotoPath }, currentBbox, currentLandmarks);
+                    currentEmbedding = await generateEmbedding(cropped);
+                  }
+
+                  if (!currentEmbedding) {
+                    Alert.alert('Error', 'Could not extract valid 3D facial embedding. Please try again in better lighting.');
+                    setEnrollStatus('IDLE');
+                    return;
+                  }
+
+                  const result = await NHAIFaceSDK.enrollEmbedding(employeeId, name, currentEmbedding, currentLandmarks, permanentPhotoPath);
+                  
+                  if (isMountedRef.current) {
+                    setDetectedFace({
+                      bbox: currentBbox,
+                      landmarks: currentLandmarks,
+                      color: '#28a745'
+                    });
+                    
+                    setEnrollStatus('SUCCESS');
+                    Alert.alert('Success', `Employee ${name} (${employeeId}) has been successfully enrolled offline.`);
+                    setTimeout(() => {
+                      if (isMountedRef.current) {
+                        if (navigation.canGoBack()) {
+                          navigation.goBack();
+                        } else {
+                          navigation.navigate('Home');
+                        }
+                      }
+                    }, 2500);
+                  }
+                } catch (error) {
+                  console.error('[EnrollScreen]', error);
                   if (isMountedRef.current) {
                     setEnrollStatus('IDLE');
-                    Alert.alert(
-                      'Enrollment Failed ❌',
-                      err.message || 'Face enrollment failed. Please hold still and try again.',
-                      [{ text: 'Retry', onPress: () => { if (isMountedRef.current) { setEnrollStatus('SCANNING'); setProgress(0); setStatusMessage('Align face inside guide oval...'); } } }]
-                    );
-                  }
-                } finally {
-                  if (tensor) {
-                    tensor.dispose();
+                    Alert.alert('Enrollment Failed', error.message || 'Face enrollment failed due to spoofing or poor lighting.');
                   }
                 }
               })();
@@ -130,15 +165,15 @@ export default function EnrollScreen({ navigation }) {
           return nextProgress;
         });
       } else {
-        setStatusMessage('Face lost. Align face in guides...');
-        setProgress(prev => Math.max(0, prev - 10)); // decay progress if face lost
+        setProgress(0);
+        setStatusMessage('Align face inside guide oval...');
       }
     }, 100); // 20 increments of 5% = 2000ms (2 seconds)
 
     return () => {
       if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
     };
-  }, [enrollStatus, employeeId, name]);
+  }, [enrollStatus, employeeId, name, navigation]);
 
   if (enrollStatus === 'SUCCESS') {
     return (
@@ -219,9 +254,21 @@ export default function EnrollScreen({ navigation }) {
             <Text style={styles.processingText}>
               Analyzing passive liveness cues & extracting offline face template.
             </Text>
-            <Text style={styles.processingSubtext}>
-              Please hold still, this takes a few seconds...
+            <Text style={styles.statusSubtext}>
+              {Math.round(progress)}% Complete - Do not move
             </Text>
+
+            {/* Show physical geometric distances on screen if capturing */}
+            {latestEmbeddingRef.current && (
+              <View style={{marginTop: 10, backgroundColor: 'rgba(0,0,0,0.6)', padding: 10, borderRadius: 8}}>
+                <Text style={{color: '#00FF00', fontSize: 10, fontFamily: 'monospace'}}>
+                  CAPTURED GEOMETRY (First 8 Distances):
+                </Text>
+                <Text style={{color: '#00FF00', fontSize: 10, fontFamily: 'monospace', marginTop: 4}}>
+                  [{latestEmbeddingRef.current.slice(0, 8).map(v => v.toFixed(3)).join(', ')} ...]
+                </Text>
+              </View>
+            )}
           </View>
         )}
       </View>

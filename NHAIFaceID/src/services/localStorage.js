@@ -95,14 +95,14 @@ export async function getLatestEnrolledFace() {
   }
 }
 
-export async function insertEnrolledFace(employeeId, name, embeddingArray, depthVariance = 0.0, faceRatios = {}) {
+export async function insertEnrolledFace(employeeId, name, embeddingArray, depthVariance = 0.0, faceRatios = {}, thumbnailPath = null) {
   const db = await getDBConnection();
   const embeddingStr = JSON.stringify(embeddingArray);
   const faceRatiosStr = JSON.stringify(faceRatios);
   
   await db.executeSql(
-    `INSERT INTO enrolled_faces (employee_id, name, embedding, depth_variance, face_ratios) VALUES (?, ?, ?, ?, ?)`,
-    [employeeId, name, embeddingStr, depthVariance, faceRatiosStr]
+    `INSERT INTO enrolled_faces (employee_id, name, embedding, depth_variance, face_ratios, thumbnail_path) VALUES (?, ?, ?, ?, ?, ?)`,
+    [employeeId, name, embeddingStr, depthVariance, faceRatiosStr, thumbnailPath]
   );
 }
 
@@ -145,3 +145,39 @@ export async function purgeLocalData() {
   `);
   console.log('[SQLite] Purged old synced logs');
 }
+
+// Fetch all enrolled faces
+export async function getAllEnrolledFaces() {
+  const db = await getDBConnection();
+  const [results] = await db.executeSql('SELECT * FROM enrolled_faces ORDER BY id DESC');
+  const faces = [];
+  for (let i = 0; i < results.rows.length; i++) {
+    faces.push(results.rows.item(i));
+  }
+  return faces;
+}
+
+// Fetch verifications from today
+export async function getVerificationsToday() {
+  const db = await getDBConnection();
+  const [results] = await db.executeSql("SELECT * FROM verification_log WHERE timestamp >= date('now') ORDER BY id DESC");
+  const logs = [];
+  for (let i = 0; i < results.rows.length; i++) {
+    logs.push(results.rows.item(i));
+  }
+  return logs;
+}
+
+// Fetch pending sync logs
+export async function getPendingSyncLogs() {
+  return await getUnsyncedLogs();
+}
+
+export async function purgeAllData() {
+  const db = await getDBConnection();
+  await db.executeSql('DELETE FROM enrolled_faces');
+  await db.executeSql('DELETE FROM verification_log');
+  await db.executeSql('DELETE FROM sync_queue');
+  console.log('[SQLite] Wiped all testing data successfully');
+}
+
