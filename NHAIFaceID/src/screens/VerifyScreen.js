@@ -3,15 +3,8 @@ import { StyleSheet, Text, View, TouchableOpacity, Animated, Switch } from 'reac
 import CameraView from '../components/CameraView';
 import NHAIFaceSDK from '../NHAIFaceSDK';
 import RNFS from 'react-native-fs';
-import { decodeJpeg } from '@tensorflow/tfjs-react-native/dist/decode_image';
-
-import { Buffer } from 'buffer';
 import { alignAndCropFace, generateEmbedding } from '../services/faceRecognition';
 import { calculateLandmarksVariance, checkPoseAngle } from '../services/livenessDetection';
-
-function base64ToUint8Array(base64) {
-  return new Uint8Array(Buffer.from(base64, 'base64'));
-}
 
 export default function VerifyScreen({ navigation }) {
   const [matchStatus, setMatchStatus] = useState('SEARCHING'); // SEARCHING, MATCHED, LOW_CONFIDENCE, UNKNOWN, SPOOF_REJECTED

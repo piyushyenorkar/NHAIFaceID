@@ -4,15 +4,10 @@ import Svg, { Ellipse, Rect, Polyline } from 'react-native-svg';
 import RNFS from 'react-native-fs';
 import CameraView from '../components/CameraView';
 import NHAIFaceSDK from '../NHAIFaceSDK';
-import { decodeJpeg } from '@tensorflow/tfjs-react-native/dist/decode_image';
 
-import { Buffer } from 'buffer';
 import { alignAndCropFace, generateEmbedding } from '../services/faceRecognition';
 import { calculateLandmarksVariance, checkPoseAngle, estimatePoseAngle } from '../services/livenessDetection';
 
-function base64ToUint8Array(base64) {
-  return new Uint8Array(Buffer.from(base64, 'base64'));
-}
 
 export default function EnrollScreen({ navigation }) {
   const [employeeId, setEmployeeId] = useState('');
