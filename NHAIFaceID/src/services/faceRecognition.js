@@ -23,7 +23,7 @@ let _loadTensorflowModel = null;
 async function ensureTFLiteLoader() {
   if (_loadTensorflowModel) return true;
   try {
-    const mod = await import('react-native-fast-tflite');
+    const mod = require('react-native-fast-tflite');
     _loadTensorflowModel = mod.loadTensorflowModel;
     return true;
   } catch (e) {
@@ -89,8 +89,7 @@ export async function alignAndCropFace(image, bbox, landmarks = null) {
 
   if (image && image.path) {
     try {
-      // Dynamically import react-native-fs to keep this module test-safe
-      const RNFS = (await import('react-native-fs')).default;
+      const RNFS = require('react-native-fs');
       // Strip 'file://' prefix for RNFS.readFile on Android
       const cleanPath = image.path.startsWith('file://')
         ? image.path.slice(7)
@@ -198,10 +197,10 @@ export async function generateEmbedding(croppedFace) {
  * @returns {Promise<number[]>}
  */
 async function runMobileFaceNetInference(base64, bbox) {
-  // Dynamically import decodeJpeg — only available inside React Native runtime
+  // Dynamically require decodeJpeg — only available inside React Native runtime
   let decodeJpeg;
   try {
-    const rnTfjs = await import('@tensorflow/tfjs-react-native/dist/decode_image');
+    const rnTfjs = require('@tensorflow/tfjs-react-native/dist/decode_image');
     decodeJpeg = rnTfjs.decodeJpeg;
   } catch (e) {
     throw new Error('decodeJpeg not available: ' + e.message);

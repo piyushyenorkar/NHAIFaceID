@@ -358,10 +358,15 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
 
   const frameCount = useRef(0);
 
-  const handleFaceResult = (box, contours) => {
+  const handleFaceResult = (box, contours, euler = null) => {
     if (onFaceDetectedRef.current) {
       // Calculate the 468 simulated landmarks safely on the JS thread!
       const simulatedLandmarks = getFaceMesh468(box, contours);
+      if (simulatedLandmarks && euler) {
+        simulatedLandmarks.yawAngle = euler.yawAngle;
+        simulatedLandmarks.pitchAngle = euler.pitchAngle;
+        simulatedLandmarks.rollAngle = euler.rollAngle;
+      }
       onFaceDetectedRef.current(box, simulatedLandmarks, null);
     }
   };
@@ -421,9 +426,15 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
           }
         }
 
+        const euler = {
+          yawAngle: typeof face.yawAngle === 'number' ? face.yawAngle : 0,
+          pitchAngle: typeof face.pitchAngle === 'number' ? face.pitchAngle : 0,
+          rollAngle: typeof face.rollAngle === 'number' ? face.rollAngle : 0,
+        };
+
         // Embedding and simulatedLandmarks are computed on the JS thread
         // to prevent Worklet sharing errors with complex Math functions.
-        runHandleFaceResult(normalizedBox, normalizedContours);
+        runHandleFaceResult(normalizedBox, normalizedContours, euler);
       } else {
         if (frameCount.current % 5 === 0) {
           runHandleNoFace();
