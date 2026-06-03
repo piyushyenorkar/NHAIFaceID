@@ -86,8 +86,9 @@ class NHAIFaceSDK {
 
     // Check if the face already exists in the system to prevent duplicate enrollments
     const dupCheck = await this.verifyEmbedding(finalEmbedding, landmarks, 'enrollment_check', true);
-    if (dupCheck.status === 'MATCH' || dupCheck.status === 'LOW_CONFIDENCE' || dupCheck.confidence > 0.45) {
-      throw new Error(`Face is already enrolled under Employee ID: ${dupCheck.employeeId || 'Unknown'} (${dupCheck.name || 'Unknown'}). New unique face required.`);
+    if (dupCheck.status === 'MATCH' || dupCheck.status === 'LOW_CONFIDENCE' || parseFloat(dupCheck.confidence) > 45) {
+      const dupEmp = dupCheck.employee || {};
+      throw new Error(`Face is already enrolled under Employee ID: ${dupEmp.employee_id || 'Unknown'} (${dupEmp.name || 'Unknown'}). New unique face required.`);
     }
 
     // Log the final embedding being saved
@@ -109,7 +110,7 @@ class NHAIFaceSDK {
       throw dbError;
     }
     
-    console.log(`[NHAIFaceSDK] Successfully enrolled ${name} offline with geometric ratios.`);
+    console.log(`[NHAIFaceSDK] Successfully enrolled ${name} with native MobileFaceNet 128-D embedding.`);
     return {
       success: true,
       landmarks

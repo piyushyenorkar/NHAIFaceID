@@ -70,9 +70,9 @@ export default function UserListScreen() {
         </View>
 
         <View style={styles.hashContainer}>
-          <Text style={styles.hashTitle}>128-D GEOMETRIC HASH (First 8 Distances):</Text>
+          <Text style={styles.hashTitle}>128-D MobileFaceNet Embedding (First 8):</Text>
           <Text style={styles.hashText}>
-            [{Array.isArray(embeddingArray) ? embeddingArray.slice(0, 8).map(v => (typeof v === 'number' ? v : Number(v) || 0).toFixed(3)).join(', ') : 'N/A'} ...]
+            [{Array.isArray(embeddingArray) ? embeddingArray.slice(0, 8).map(v => (typeof v === 'number' ? v : Number(v) || 0).toFixed(4)).join(', ') : 'N/A'} ...]
           </Text>
         </View>
       </View>

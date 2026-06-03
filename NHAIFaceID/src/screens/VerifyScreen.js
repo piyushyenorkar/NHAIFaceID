@@ -186,15 +186,21 @@ export default function VerifyScreen({ navigation }) {
                     console.log('[VerifyScreen] Simulated landmarks in history — skipping variance spoof check.');
                   }
 
-                  // Extract High-Res Photo & Generate Embedding via TFJS
-                  let currentEmbedding = latestEmbeddingRef.current;
-                  if (!currentEmbedding) {
-                    if (cameraViewRef.current) {
-                      const photoPath = await cameraViewRef.current.capturePhoto();
+                  // Extract real 128-D embedding via native MobileFaceNet TFLite
+                  let currentEmbedding = null;
+                  if (cameraViewRef.current) {
+                    try {
+                      const photoPromise = cameraViewRef.current.capturePhoto();
+                      const timeoutPromise = new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error('Photo capture timeout')), 5000)
+                      );
+                      const photoPath = await Promise.race([photoPromise, timeoutPromise]);
                       if (photoPath) {
                         const cropped = await alignAndCropFace({ path: photoPath }, currentBbox, currentLandmarks);
                         currentEmbedding = await generateEmbedding(cropped);
                       }
+                    } catch (photoErr) {
+                      console.error('[VerifyScreen] Photo capture/embedding failed:', photoErr.message);
                     }
                   }
 
@@ -400,14 +406,14 @@ export default function VerifyScreen({ navigation }) {
               {isProcessing ? '⚙️ Biometric Audit in Progress' : 'Running Biometric Audit...'}
             </Text>
             
-            {/* Show physical geometric distances on screen if matching */}
+            {/* Show live neural network embedding on screen if matching */}
             {latestEmbeddingRef.current && (
               <View style={{position: 'absolute', top: 120, left: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.6)', padding: 10, borderRadius: 8}}>
                 <Text style={{color: '#00FF00', fontSize: 10, fontFamily: 'monospace'}}>
-                  LIVE 128-D GEOMETRIC DISTANCES (Sample):
+                  LIVE 128-D MobileFaceNet Embedding:
                 </Text>
                 <Text style={{color: '#00FF00', fontSize: 10, fontFamily: 'monospace', marginTop: 4}}>
-                  [{latestEmbeddingRef.current.slice(0, 8).map(v => v.toFixed(3)).join(', ')} ...]
+                  [{latestEmbeddingRef.current.slice(0, 8).map(v => (typeof v === 'number' ? v : 0).toFixed(4)).join(', ')} ...]
                 </Text>
               </View>
             )}

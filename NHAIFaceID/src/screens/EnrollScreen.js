@@ -312,34 +312,29 @@ export default function EnrollScreen({ navigation }) {
 
                 let embedding = null;
                 
-                // Generate embedding from landmarks directly (always works)
-                const cropped = await alignAndCropFace(null, currentBbox, currentLandmarks);
-                embedding = await generateEmbedding(cropped);
-
-                // Also try to capture a photo (with timeout) for better quality
+                // REAL face recognition: capture photo → native TFLite → 128-D embedding
+                // NO FALLBACK — if photo fails, we retry, not fake it
                 try {
                   if (cameraViewRef.current) {
                     const photoPromise = cameraViewRef.current.capturePhoto();
                     const timeoutPromise = new Promise((_, reject) => 
-                      setTimeout(() => reject(new Error('Photo capture timeout')), 3000)
+                      setTimeout(() => reject(new Error('Photo capture timeout')), 5000)
                     );
                     const photoPath = await Promise.race([photoPromise, timeoutPromise]);
                     if (photoPath) {
-                      const photoCropped = await alignAndCropFace({ path: photoPath }, currentBbox, currentLandmarks);
-                      const photoEmbedding = await generateEmbedding(photoCropped);
-                      if (photoEmbedding) {
-                        embedding = photoEmbedding; // Prefer photo-based embedding
-                      }
+                      const cropped = await alignAndCropFace({ path: photoPath }, currentBbox, currentLandmarks);
+                      embedding = await generateEmbedding(cropped);
                     }
                   }
                 } catch (photoErr) {
-                  console.warn('[EnrollScreen] Photo capture failed, using landmark embedding:', photoErr.message);
+                  console.error('[EnrollScreen] Photo capture/embedding error:', photoErr.message);
                 }
 
                 if (!embedding) {
-                  console.warn('[EnrollScreen] No embedding generated, skipping stage');
+                  console.warn('[EnrollScreen] Stage capture failed — no real embedding. Will retry.');
+                  setStatusMessage('📷 Capture failed — hold still and try again');
                   isProcessingStageRef.current = false;
-                  // Still advance to avoid getting stuck
+                  return; // Don't advance — retry this stage
                 }
 
                 collectedEmbeddingsRef.current[currentStage] = embedding;
@@ -583,14 +578,14 @@ export default function EnrollScreen({ navigation }) {
               {Math.round(progress)}% Complete - Do not move
             </Text>
 
-            {/* Show physical geometric distances on screen if capturing */}
+            {/* Show live neural network embedding if capturing */}
             {latestEmbeddingRef.current && (
               <View style={{marginTop: 10, backgroundColor: 'rgba(0,0,0,0.6)', padding: 10, borderRadius: 8}}>
                 <Text style={{color: '#00FF00', fontSize: 10, fontFamily: 'monospace'}}>
-                  CAPTURED GEOMETRY (First 8 Distances):
+                  LIVE 128-D MobileFaceNet Embedding:
                 </Text>
                 <Text style={{color: '#00FF00', fontSize: 10, fontFamily: 'monospace', marginTop: 4}}>
-                  [{latestEmbeddingRef.current.slice(0, 8).map(v => v.toFixed(3)).join(', ')} ...]
+                  [{latestEmbeddingRef.current.slice(0, 8).map(v => (typeof v === 'number' ? v : 0).toFixed(4)).join(', ')} ...]
                 </Text>
               </View>
             )}

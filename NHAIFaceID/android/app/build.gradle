@@ -110,11 +110,21 @@ android {
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
     }
+    // Resolve duplicate librnworklets.so from vision-camera and worklets-core
+    packagingOptions {
+        pickFirst 'lib/arm64-v8a/librnworklets.so'
+        pickFirst 'lib/armeabi-v7a/librnworklets.so'
+        pickFirst 'lib/x86/librnworklets.so'
+        pickFirst 'lib/x86_64/librnworklets.so'
+    }
 }
 
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
+
+    // TensorFlow Lite for native face recognition inference (MobileFaceNet)
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
