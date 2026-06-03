@@ -271,13 +271,28 @@ export default function EnrollScreen({ navigation }) {
 
                 let embedding = null;
                 if (currentStage === 'CENTER') {
-                  // Capture physical photo for primary CENTER pose to generate high-accuracy TFLite embedding
-                  if (cameraViewRef.current) {
-                    const photoPath = await cameraViewRef.current.capturePhoto();
-                    if (photoPath) {
-                      const cropped = await alignAndCropFace({ path: photoPath }, currentBbox, currentLandmarks);
-                      embedding = await generateEmbedding(cropped);
+                  // Generate default landmark embedding first (always works as fallback)
+                  const fallbackCropped = await alignAndCropFace(null, currentBbox, currentLandmarks);
+                  embedding = await generateEmbedding(fallbackCropped);
+
+                  // Try physical photo capture (with 3-second timeout) for higher-accuracy TFLite embedding
+                  try {
+                    if (cameraViewRef.current) {
+                      const photoPromise = cameraViewRef.current.capturePhoto();
+                      const timeoutPromise = new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error('Photo capture timeout')), 3000)
+                      );
+                      const photoPath = await Promise.race([photoPromise, timeoutPromise]);
+                      if (photoPath) {
+                        const cropped = await alignAndCropFace({ path: photoPath }, currentBbox, currentLandmarks);
+                        const photoEmbedding = await generateEmbedding(cropped);
+                        if (photoEmbedding) {
+                          embedding = photoEmbedding;
+                        }
+                      }
                     }
+                  } catch (photoErr) {
+                    console.warn('[EnrollScreen] Center photo capture failed, using landmark embedding:', photoErr.message);
                   }
                 } else {
                   // Generate instant geometric landmark embedding for intermediate profile poses to prevent UI freezes
@@ -286,8 +301,9 @@ export default function EnrollScreen({ navigation }) {
                 }
 
                 if (!embedding) {
+                  console.warn('[EnrollScreen] No embedding generated, skipping stage');
                   isProcessingStageRef.current = false;
-                  return;
+                  // Still advance to avoid getting stuck
                 }
 
                 collectedEmbeddingsRef.current[currentStage] = embedding;
