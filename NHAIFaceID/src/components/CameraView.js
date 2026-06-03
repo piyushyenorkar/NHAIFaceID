@@ -477,10 +477,8 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         device={device}
         isActive={isActive}
         photo={true}
-        format={format}
         frameProcessor={frameProcessor}
         pixelFormat="yuv"
-        lowLightBoost={device?.supportsLowLightBoost}
       />
       
       {activeBox && (
