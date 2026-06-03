@@ -208,13 +208,19 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
       performanceMode: 'fast',
       contourMode: 'all',
       landmarkMode: 'none',
-      classificationMode: 'none'
+      classificationMode: 'none',
+      minFaceSize: 0.15,
+      trackingEnabled: false,
+      convertFrame: false
     });
 
-    const faces = result && result.faces ? result.faces : [];
+    let facesArray = [];
+    if (result && result.faces) {
+      facesArray = typeof result.faces === 'string' ? JSON.parse(result.faces) : result.faces;
+    }
 
-    if (faces.length > 0) {
-      const face = faces[0];
+    if (facesArray.length > 0) {
+      const face = facesArray[0];
       const bounds = face.bounds || face.boundingBox || face;
       const fw = frame.width || width;
       const fh = frame.height || height;
