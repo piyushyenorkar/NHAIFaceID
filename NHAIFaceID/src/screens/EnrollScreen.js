@@ -270,12 +270,19 @@ export default function EnrollScreen({ navigation }) {
                 }
 
                 let embedding = null;
-                if (cameraViewRef.current) {
-                  const photoPath = await cameraViewRef.current.capturePhoto();
-                  if (photoPath) {
-                    const cropped = await alignAndCropFace({ path: photoPath }, currentBbox, currentLandmarks);
-                    embedding = await generateEmbedding(cropped);
+                if (currentStage === 'CENTER') {
+                  // Capture physical photo for primary CENTER pose to generate high-accuracy TFLite embedding
+                  if (cameraViewRef.current) {
+                    const photoPath = await cameraViewRef.current.capturePhoto();
+                    if (photoPath) {
+                      const cropped = await alignAndCropFace({ path: photoPath }, currentBbox, currentLandmarks);
+                      embedding = await generateEmbedding(cropped);
+                    }
                   }
+                } else {
+                  // Generate instant geometric landmark embedding for intermediate profile poses to prevent UI freezes
+                  const cropped = await alignAndCropFace(null, currentBbox, currentLandmarks);
+                  embedding = await generateEmbedding(cropped);
                 }
 
                 if (!embedding) {
