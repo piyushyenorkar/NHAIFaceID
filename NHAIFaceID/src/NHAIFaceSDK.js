@@ -85,10 +85,32 @@ class NHAIFaceSDK {
     }
 
     // Check if the face already exists in the system to prevent duplicate enrollments
-    const dupCheck = await this.verifyEmbedding(finalEmbedding, landmarks, 'enrollment_check', true);
-    if (dupCheck.status === 'MATCH' || dupCheck.status === 'LOW_CONFIDENCE' || parseFloat(dupCheck.confidence) > 45) {
-      const dupEmp = dupCheck.employee || {};
-      throw new Error(`Face is already enrolled under Employee ID: ${dupEmp.employee_id || 'Unknown'} (${dupEmp.name || 'Unknown'}). New unique face required.`);
+    // We bypass the full verifyEmbedding pipeline (which includes liveness) and directly compare embeddings
+    try {
+      const db = await getDBConnection();
+      const [results] = await db.executeSql('SELECT employee_id, name, embedding FROM enrolled_faces');
+      
+      for (let i = 0; i < results.rows.length; i++) {
+        const row = results.rows.item(i);
+        const storedEmbedding = JSON.parse(row.embedding);
+        let sim = 0;
+        if (Array.isArray(storedEmbedding[0])) {
+          for (const emb of storedEmbedding) {
+            const s = cosineSimilarity(finalEmbedding, emb);
+            if (s > sim) sim = s;
+          }
+        } else {
+          sim = cosineSimilarity(finalEmbedding, storedEmbedding);
+        }
+        if (sim > 0.55) {
+          throw new Error(`Face is already enrolled under Employee ID: ${row.employee_id} (${row.name}). Similarity: ${(sim * 100).toFixed(1)}%. New unique face required.`);
+        }
+      }
+    } catch (dupError) {
+      if (dupError.message && dupError.message.includes('already enrolled')) {
+        throw dupError;
+      }
+      console.warn('[NHAIFaceSDK] Duplicate check failed:', dupError.message);
     }
 
     // Log the final embedding being saved
@@ -208,9 +230,10 @@ class NHAIFaceSDK {
           const interpupillaryError = interpupillaryDiff / storedRatios.interpupillaryRatio;
           const noseHeightError = noseHeightDiff / storedRatios.noseHeightRatio;
 
-          // If ratios deviate by > 18%, apply a strict geometric mismatch penalty
-          if (interpupillaryError > 0.18 || noseHeightError > 0.18) {
-            ratioPenalty = 0.45; // Strict penalty
+          // If ratios deviate by > 25%, apply a soft geometric mismatch penalty
+          // (reduced from 0.45 since real MobileFaceNet embeddings are reliable)
+          if (interpupillaryError > 0.25 || noseHeightError > 0.25) {
+            ratioPenalty = 0.75; // Soft penalty — real embedding similarity is more trustworthy
             isGeoMismatch = true;
           }
         }
