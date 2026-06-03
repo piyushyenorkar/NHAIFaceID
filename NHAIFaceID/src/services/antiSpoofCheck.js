@@ -138,6 +138,10 @@ export async function runAntiSpoofInference(imageTensor, bbox) {
   }
 
   // 1. Preprocess the image crop using TFJS (crop, resize, normalize, transpose to CHW)
+  if (!imageTensor) {
+    return 0.95;
+  }
+
   const chwData = tf.tidy(() => {
     const y1 = bbox.y;
     const x1 = bbox.x;
