@@ -6,6 +6,7 @@ NHAIFaceID/node_modules/
 # Android build and caches
 .gradle/
 **/android/.gradle/
+**/android/local.properties
 **/android/build/
 **/android/app/build/
 build/
