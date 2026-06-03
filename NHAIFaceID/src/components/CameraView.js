@@ -168,6 +168,9 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         return photo.path;
       }
       return null;
+    },
+    toggleCamera() {
+      setCameraPosition(prev => prev === 'front' ? 'back' : 'front');
     }
   }));
 
@@ -333,16 +336,6 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         </Svg>
       )}
 
-      <TouchableOpacity style={styles.switchButton} onPress={toggleCamera}>
-        <Text style={styles.switchIcon}>🔄</Text>
-        <Text style={styles.switchText}>{cameraPosition === 'front' ? 'Front' : 'Back'}</Text>
-      </TouchableOpacity>
-
-      <View style={styles.textOverlay}>
-        <Text style={[styles.guidanceText, { color: activeColor === 'gray' ? 'white' : activeColor }]}>
-          {detectedFace ? 'Biometric Alignment complete' : 'Align face inside guides...'}
-        </Text>
-      </View>
     </View>
   );
 });
