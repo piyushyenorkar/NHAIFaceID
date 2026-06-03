@@ -1,0 +1,13 @@
+{
+  "migIndex": 1,
+  "data": [
+    {
+      "path": "assets/fonts/Rajdhani-Bold.ttf",
+      "sha1": "fb82c1992ff13cb2bc6fa12c29ffcb89974adb7b"
+    },
+    {
+      "path": "assets/fonts/Rajdhani-SemiBold.ttf",
+      "sha1": "631daaffec8f19b9b0c23a80b3465a278993e22a"
+    }
+  ]
+}
