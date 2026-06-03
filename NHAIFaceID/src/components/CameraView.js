@@ -326,7 +326,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
   const [layoutDims, setLayoutDims] = useState({ w: width, h: height });
 
   const exposureValue = (device && typeof device.maxExposure === 'number' && device.maxExposure > 0)
-    ? Math.min(4.0, device.maxExposure)
+    ? Math.min(12.0, device.maxExposure)
     : undefined;
 
   console.log('[CameraView] Device exposure limits - minExposure:', device?.minExposure, 
