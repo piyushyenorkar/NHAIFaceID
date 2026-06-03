@@ -102,7 +102,7 @@ export function calculateFacialRatios(landmarks) {
  * @returns {number} Standard deviation of Z values
  */
 export function calculateDepthVariance(landmarks) {
-  if (!landmarks || landmarks.length === 0) return 0.0;
+  if (!landmarks || !Array.isArray(landmarks) || landmarks.length === 0) return 0.0;
   
   let zValues = [];
   if (landmarks.length >= 468) {

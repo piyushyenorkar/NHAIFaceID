@@ -34,7 +34,7 @@ export default function App() {
         <Stack.Screen 
           name="Home" 
           component={HomeScreen} 
-          options={{ title: 'Datalake 3.0 — Field Auth' }} 
+          options={{ headerShown: false }} 
         />
         <Stack.Screen 
           name="Enroll" 
