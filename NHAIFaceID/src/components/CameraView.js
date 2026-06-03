@@ -313,12 +313,16 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
   const [hasPermission, setHasPermission] = useState(false);
   const [layoutDims, setLayoutDims] = useState({ w: width, h: height });
 
-  const faceDetectorOptions = useRef({
+  const faceDetectorOptions = React.useMemo(() => ({
     performanceMode: 'fast',
     contourMode: 'all',
     landmarkMode: 'all',
     classificationMode: 'all',
-  }).current;
+    autoMode: true,
+    windowWidth: width,
+    windowHeight: height,
+    cameraFacing: cameraPosition
+  }), [cameraPosition]);
 
   const { detectFaces } = useFaceDetector(faceDetectorOptions);
 
@@ -399,6 +403,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
       if (faces.length > 0) {
         const face = faces[0];
         const bounds = face.bounds || face.boundingBox || face;
+
         const normalizedBox = {
           x: (bounds.x ?? bounds.left ?? 0) / width,
           y: (bounds.y ?? bounds.top ?? 0) / height,
@@ -498,31 +503,9 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         exposure={exposureValue}
       />
       
-      {/* Center Oval Mask Guide Overlay */}
+      {/* Center Oval Guide Overlay */}
       {isActive && (
         <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
-          <Defs>
-            <Mask id="guideOvalMask" x="0" y="0" width="100%" height="100%">
-              <Rect x="0" y="0" width="100%" height="100%" fill="#ffffff" />
-              <Ellipse
-                cx={layoutDims.w / 2}
-                cy={layoutDims.h * 0.42}
-                rx={layoutDims.w * 0.32}
-                ry={layoutDims.h * 0.26}
-                fill="#000000"
-              />
-            </Mask>
-          </Defs>
-
-          <Rect
-            x="0"
-            y="0"
-            width="100%"
-            height="100%"
-            fill="rgba(10, 31, 68, 0.55)"
-            mask="url(#guideOvalMask)"
-          />
-
           <Ellipse
             cx={layoutDims.w / 2}
             cy={layoutDims.h * 0.42}
@@ -531,6 +514,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
             stroke={displayFace ? '#10B981' : '#F5C40A'}
             strokeWidth="3.5"
             strokeDasharray="12, 6"
+            fill="none"
           />
 
           <Ellipse
@@ -538,8 +522,9 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
             cy={layoutDims.h * 0.42}
             rx={layoutDims.w * 0.30}
             ry={layoutDims.h * 0.24}
-            stroke="rgba(245, 196, 10, 0.25)"
+            stroke="rgba(245, 196, 10, 0.4)"
             strokeWidth="1.5"
+            fill="none"
           />
         </Svg>
       )}

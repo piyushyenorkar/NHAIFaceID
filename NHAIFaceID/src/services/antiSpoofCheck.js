@@ -35,8 +35,8 @@ async function initNativeImports() {
     InferenceSession = ort.InferenceSession;
     Tensor = ort.Tensor;
     
-    const fs = require('react-native-fs');
-    RNFS = fs.default || fs;
+    let rnfsMod = require('react-native-fs');
+    RNFS = (rnfsMod && rnfsMod.default && typeof rnfsMod.default.readFile === 'function') ? rnfsMod.default : rnfsMod;
     
     const rn = require('react-native');
     Image = rn.Image;

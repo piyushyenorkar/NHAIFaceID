@@ -19,6 +19,7 @@ export default function EnrollScreen({ navigation }) {
   const [name, setName] = useState('');
   const [enrollStatus, setEnrollStatus] = useState('IDLE'); // IDLE, SCANNING, PROCESSING, SUCCESS
   const [detectedFace, setDetectedFace] = useState(null);
+  const [focusedInput, setFocusedInput] = useState(null);
 
   // Scanning progress states
   const [progress, setProgress] = useState(0);
@@ -403,17 +404,25 @@ export default function EnrollScreen({ navigation }) {
   if (enrollStatus === 'SUCCESS') {
     return (
       <View style={styles.successContainer}>
-        <Text style={styles.successTitle}>✅ Enrollment Successful</Text>
-        <Text style={styles.successText}>Name: {name}</Text>
-        <Text style={styles.successText}>Employee ID: {employeeId}</Text>
-        <Text style={styles.timestamp}>Enrolled on: {new Date().toLocaleString()}</Text>
+        <View style={styles.successCard}>
+          <View style={styles.successIconCircle}>
+            <Text style={styles.successIcon}>✓</Text>
+          </View>
+          <Text style={styles.successTitle}>Enrollment Successful</Text>
+          
+          <View style={styles.successDetailCard}>
+            <Text style={styles.successText}>Name: <Text style={styles.successValue}>{name}</Text></Text>
+            <Text style={styles.successText}>Employee ID: <Text style={styles.successValue}>{employeeId}</Text></Text>
+            <Text style={styles.timestamp}>Registered locally on: {new Date().toLocaleDateString()} {new Date().toLocaleTimeString()}</Text>
+          </View>
 
-        <TouchableOpacity
-          style={styles.doneBtn}
-          onPress={() => navigation.navigate('Home')}
-        >
-          <Text style={styles.doneBtnText}>Return Home</Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.doneBtn}
+            onPress={() => navigation.navigate('Home')}
+          >
+            <Text style={styles.doneBtnText}>Return Home</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
@@ -422,42 +431,69 @@ export default function EnrollScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      {/* Top Input Form */}
-      <View style={styles.formContainer}>
-        <TextInput
-          style={[styles.input, { color: '#000' }]}
-          placeholder="Employee ID"
-          placeholderTextColor="#666"
-          value={employeeId}
-          onChangeText={setEmployeeId}
-          editable={enrollStatus === 'IDLE'}
+      {/* Full Screen Camera Background */}
+      <View style={styles.cameraWrapper}>
+        <CameraView 
+          ref={cameraViewRef}
+          isActive={enrollStatus !== 'SUCCESS'}
+          onFaceDetected={handleFaceDetected}
+          detectedFace={detectedFace}
         />
-        <TextInput
-          style={[styles.input, { color: '#000' }]}
-          placeholder="Full Name"
-          placeholderTextColor="#666"
-          value={name}
-          onChangeText={setName}
-          editable={enrollStatus === 'IDLE'}
-        />
-
-        {enrollStatus === 'IDLE' && (
-          <TouchableOpacity style={styles.startBtn} onPress={startEnrollment}>
-            <Text style={styles.startBtnText}>Start Enrollment</Text>
-          </TouchableOpacity>
-        )}
       </View>
+
+      {/* Dim overlay when form is shown */}
+      {enrollStatus === 'IDLE' && <View style={styles.backgroundOverlay} />}
+
+      {/* Top Input Form - absolute glass card */}
+      {enrollStatus === 'IDLE' && (
+        <View style={styles.formContainer}>
+          <Text style={styles.formTitle}>Biometric Enrollment</Text>
+          <Text style={styles.formSubtitle}>Offline Face ID Registration</Text>
+
+          <View style={styles.inputWrapper}>
+            <Text style={styles.inputLabel}>Employee ID</Text>
+            <TextInput
+              style={[styles.input, focusedInput === 'id' && styles.inputFocused]}
+              placeholder="e.g. NHAI-2026-904"
+              placeholderTextColor="rgba(255, 255, 255, 0.4)"
+              value={employeeId}
+              onChangeText={setEmployeeId}
+              editable={enrollStatus === 'IDLE'}
+              onFocus={() => setFocusedInput('id')}
+              onBlur={() => setFocusedInput(null)}
+            />
+          </View>
+
+          <View style={styles.inputWrapper}>
+            <Text style={styles.inputLabel}>Full Name</Text>
+            <TextInput
+              style={[styles.input, focusedInput === 'name' && styles.inputFocused]}
+              placeholder="e.g. Piyush Yenorkar"
+              placeholderTextColor="rgba(255, 255, 255, 0.4)"
+              value={name}
+              onChangeText={setName}
+              editable={enrollStatus === 'IDLE'}
+              onFocus={() => setFocusedInput('name')}
+              onBlur={() => setFocusedInput(null)}
+            />
+          </View>
+
+          <TouchableOpacity style={styles.startBtn} onPress={startEnrollment}>
+            <Text style={styles.startBtnText}>START ENROLLMENT</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Developer Options for scanning */}
       {enrollStatus === 'SCANNING' && (
         <View style={styles.simulatorHeader}>
-          <View style={{ flex: 0.5, flexDirection: 'row', alignItems: 'center' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Text style={styles.simulatorLabelDev}>Bypass Pose</Text>
             <Switch
               value={bypassPoseCheck}
               onValueChange={toggleBypassPoseCheck}
-              trackColor={{ false: '#767577', true: '#28a745' }}
-              thumbColor={bypassPoseCheck ? '#fff' : '#f4f3f4'}
+              trackColor={{ false: '#334155', true: '#10B981' }}
+              thumbColor={bypassPoseCheck ? '#FFFFFF' : '#94A3B8'}
             />
           </View>
           <TouchableOpacity 
@@ -469,75 +505,80 @@ export default function EnrollScreen({ navigation }) {
         </View>
       )}
 
-      {/* Camera Area */}
-      <View style={styles.cameraWrapper}>
-        <CameraView 
-          ref={cameraViewRef}
-          isActive={enrollStatus !== 'SUCCESS'}
-          onFaceDetected={handleFaceDetected}
-          detectedFace={detectedFace}
-        />
-
-        {/* Progress Overlay */}
-        {enrollStatus === 'SCANNING' && (
-          <View style={styles.progressOverlay}>
-            <Text style={styles.progressText}>
-              {statusMessage}
-            </Text>
-            <View style={styles.progressBarTrack}>
-              <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
-            </View>
-            
-            {/* Visual 5-Pose Guidance Stepper */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginTop: 12, borderTopWidth: 0.5, borderColor: 'rgba(255,255,255,0.2)', paddingTop: 10 }}>
-              <Text style={{ fontSize: 10, fontWeight: 'bold', color: enrollStage === 'CENTER' ? '#FFD700' : collectedEmbeddingsRef.current.CENTER ? '#28a745' : '#888' }}>
-                {collectedEmbeddingsRef.current.CENTER ? '✓ Center' : '○ Center'}
-              </Text>
-              <Text style={{ fontSize: 10, fontWeight: 'bold', color: enrollStage === 'LEFT' ? '#FFD700' : collectedEmbeddingsRef.current.LEFT ? '#28a745' : '#888' }}>
-                {collectedEmbeddingsRef.current.LEFT ? '✓ Left' : '○ Left'}
-              </Text>
-              <Text style={{ fontSize: 10, fontWeight: 'bold', color: enrollStage === 'RIGHT' ? '#FFD700' : collectedEmbeddingsRef.current.RIGHT ? '#28a745' : '#888' }}>
-                {collectedEmbeddingsRef.current.RIGHT ? '✓ Right' : '○ Right'}
-              </Text>
-              <Text style={{ fontSize: 10, fontWeight: 'bold', color: enrollStage === 'UP' ? '#FFD700' : collectedEmbeddingsRef.current.UP ? '#28a745' : '#888' }}>
-                {collectedEmbeddingsRef.current.UP ? '✓ Up' : '○ Up'}
-              </Text>
-              <Text style={{ fontSize: 10, fontWeight: 'bold', color: enrollStage === 'DOWN' ? '#FFD700' : collectedEmbeddingsRef.current.DOWN ? '#28a745' : '#888' }}>
-                {collectedEmbeddingsRef.current.DOWN ? '✓ Down' : '○ Down'}
+      {/* Progress Overlay */}
+      {enrollStatus === 'SCANNING' && (
+        <View style={styles.progressOverlay}>
+          <Text style={styles.progressText}>
+            {statusMessage}
+          </Text>
+          <View style={styles.progressBarTrack}>
+            <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
+          </View>
+          
+          {/* Visual 5-Pose Guidance Stepper */}
+          <View style={styles.stepperContainer}>
+            <View style={styles.stepItem}>
+              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'CENTER' ? '#F5C40A' : collectedEmbeddingsRef.current.CENTER ? '#10B981' : '#64748B' }]} />
+              <Text style={[styles.stepText, { color: enrollStage === 'CENTER' ? '#F5C40A' : collectedEmbeddingsRef.current.CENTER ? '#10B981' : '#64748B' }]}>
+                Center
               </Text>
             </View>
-
-            <Text style={styles.instructionText}>
-              Rotate head slowly through center, left, right, up, down profiles.
-            </Text>
+            <View style={styles.stepItem}>
+              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'LEFT' ? '#F5C40A' : collectedEmbeddingsRef.current.LEFT ? '#10B981' : '#64748B' }]} />
+              <Text style={[styles.stepText, { color: enrollStage === 'LEFT' ? '#F5C40A' : collectedEmbeddingsRef.current.LEFT ? '#10B981' : '#64748B' }]}>
+                Left
+              </Text>
+            </View>
+            <View style={styles.stepItem}>
+              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'RIGHT' ? '#F5C40A' : collectedEmbeddingsRef.current.RIGHT ? '#10B981' : '#64748B' }]} />
+              <Text style={[styles.stepText, { color: enrollStage === 'RIGHT' ? '#F5C40A' : collectedEmbeddingsRef.current.RIGHT ? '#10B981' : '#64748B' }]}>
+                Right
+              </Text>
+            </View>
+            <View style={styles.stepItem}>
+              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'UP' ? '#F5C40A' : collectedEmbeddingsRef.current.UP ? '#10B981' : '#64748B' }]} />
+              <Text style={[styles.stepText, { color: enrollStage === 'UP' ? '#F5C40A' : collectedEmbeddingsRef.current.UP ? '#10B981' : '#64748B' }]}>
+                Up
+              </Text>
+            </View>
+            <View style={styles.stepItem}>
+              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'DOWN' ? '#F5C40A' : collectedEmbeddingsRef.current.DOWN ? '#10B981' : '#64748B' }]} />
+              <Text style={[styles.stepText, { color: enrollStage === 'DOWN' ? '#F5C40A' : collectedEmbeddingsRef.current.DOWN ? '#10B981' : '#64748B' }]}>
+                Down
+              </Text>
+            </View>
           </View>
-        )}
 
-        {/* Processing Overlay */}
-        {enrollStatus === 'PROCESSING' && (
-          <View style={styles.processingOverlay}>
-            <Text style={styles.processingTitle}>⚙️ Biometric Audit in Progress</Text>
-            <Text style={styles.processingText}>
-              Analyzing passive liveness cues & extracting offline face template.
-            </Text>
-            <Text style={styles.processingSubtext}>
-              {Math.round(progress)}% Complete - Do not move
-            </Text>
+          <Text style={styles.instructionText}>
+            Rotate head slowly through center, left, right, up, down profiles.
+          </Text>
+        </View>
+      )}
 
-            {/* Show physical geometric distances on screen if capturing */}
-            {latestEmbeddingRef.current && (
-              <View style={{marginTop: 10, backgroundColor: 'rgba(0,0,0,0.6)', padding: 10, borderRadius: 8}}>
-                <Text style={{color: '#00FF00', fontSize: 10, fontFamily: 'monospace'}}>
-                  CAPTURED GEOMETRY (First 8 Distances):
-                </Text>
-                <Text style={{color: '#00FF00', fontSize: 10, fontFamily: 'monospace', marginTop: 4}}>
-                  [{latestEmbeddingRef.current.slice(0, 8).map(v => v.toFixed(3)).join(', ')} ...]
-                </Text>
-              </View>
-            )}
-          </View>
-        )}
-      </View>
+      {/* Processing Overlay */}
+      {enrollStatus === 'PROCESSING' && (
+        <View style={styles.processingOverlay}>
+          <Text style={styles.processingTitle}>⚙️ Biometric Audit in Progress</Text>
+          <Text style={styles.processingText}>
+            Analyzing passive liveness cues & extracting offline face template.
+          </Text>
+          <Text style={styles.processingSubtext}>
+            {Math.round(progress)}% Complete - Do not move
+          </Text>
+
+          {/* Show physical geometric distances on screen if capturing */}
+          {latestEmbeddingRef.current && (
+            <View style={{marginTop: 14, backgroundColor: 'rgba(0,0,0,0.4)', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(245, 196, 10, 0.2)'}}>
+              <Text style={{color: '#10B981', fontSize: 10, fontFamily: 'monospace', fontWeight: 'bold'}}>
+                CAPTURED GEOMETRY (First 8 Distances):
+              </Text>
+              <Text style={{color: '#10B981', fontSize: 10, fontFamily: 'monospace', marginTop: 4}}>
+                [{latestEmbeddingRef.current.slice(0, 8).map(v => v.toFixed(3)).join(', ')} ...]
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
     </View>
   );
 }
@@ -545,190 +586,319 @@ export default function EnrollScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#0A0F1D', // Premium Slate Dark background
+  },
+  cameraWrapper: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  backgroundOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(10, 15, 30, 0.65)', // Dimming camera slightly for form input
   },
   formContainer: {
-    padding: 16,
-    backgroundColor: '#f8f9fa',
-    borderBottomWidth: 1,
-    borderBottomColor: '#dee2e6',
+    position: 'absolute',
+    top: '20%',
+    left: 20,
+    right: 20,
+    backgroundColor: 'rgba(15, 23, 42, 0.88)', // Dark Glassmorphic container
+    borderRadius: 24,
+    padding: 24,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    shadowColor: '#F5C40A',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8,
+    zIndex: 10,
   },
-  input: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#ced4da',
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginBottom: 12,
-    fontSize: 16,
+  formTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginBottom: 4,
   },
-  simulatorCard: {
-    backgroundColor: '#fff',
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ced4da',
+  formSubtitle: {
+    fontSize: 12,
+    color: '#94A3B8',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  inputWrapper: {
     marginBottom: 16,
   },
-  simulatorRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 4,
+  inputLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#94A3B8',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
   },
-  simulatorLabel: {
-    fontSize: 13,
-    color: '#333',
-    fontWeight: '500',
+  input: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 15,
+    color: '#FFFFFF',
+  },
+  inputFocused: {
+    borderColor: '#F5C40A', // Highlight with gold border on focus
+    backgroundColor: 'rgba(245, 196, 10, 0.03)',
   },
   startBtn: {
     backgroundColor: '#003087',
-    borderRadius: 8,
+    borderColor: '#F5C40A',
+    borderWidth: 2,
+    borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
+    marginTop: 10,
+    shadowColor: '#F5C40A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   startBtnText: {
-    color: '#FFD700',
-    fontSize: 18,
+    color: '#F5C40A',
+    fontSize: 15,
     fontWeight: 'bold',
+    letterSpacing: 1.2,
   },
-  cameraWrapper: {
-    flex: 1,
-    position: 'relative',
+  simulatorHeader: {
+    position: 'absolute',
+    top: 50,
+    left: 20,
+    right: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(245, 196, 10, 0.3)',
+    zIndex: 100,
+  },
+  simulatorLabelDev: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontWeight: 'bold',
+    marginRight: 8,
+  },
+  forceCaptureBtn: {
+    backgroundColor: 'rgba(0, 48, 135, 0.6)',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#F5C40A',
+  },
+  forceCaptureBtnText: {
+    color: '#F5C40A',
+    fontSize: 11,
+    fontWeight: 'bold',
   },
   progressOverlay: {
     position: 'absolute',
-    top: 20,
+    bottom: 40,
     alignSelf: 'center',
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 20,
+    backgroundColor: 'rgba(15, 23, 42, 0.92)',
+    paddingVertical: 20,
+    paddingHorizontal: 20,
+    borderRadius: 24,
     alignItems: 'center',
-    width: '90%'
+    width: '90%',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    elevation: 10,
   },
   progressText: {
-    color: '#FFD700',
-    fontSize: 15,
+    color: '#F5C40A',
+    fontSize: 13,
     fontWeight: 'bold',
     textAlign: 'center',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   progressBarTrack: {
     width: '100%',
     height: 6,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
     borderRadius: 3,
-    marginTop: 10,
-    marginBottom: 6,
+    marginTop: 12,
+    marginBottom: 12,
     overflow: 'hidden',
   },
   progressBarFill: {
     height: '100%',
-    backgroundColor: '#FFD700',
+    backgroundColor: '#F5C40A',
+  },
+  stepperContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginTop: 6,
+    borderTopWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.1)',
+    paddingTop: 12,
+  },
+  stepItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  stepIndicator: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 4,
+  },
+  stepText: {
+    fontSize: 10,
+    fontWeight: 'bold',
   },
   instructionText: {
-    color: '#FFF',
+    color: '#94A3B8',
     fontSize: 11,
-    marginTop: 4,
+    marginTop: 12,
     textAlign: 'center',
+    fontStyle: 'italic',
   },
   successContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#0A0F1D',
     padding: 24,
-    backgroundColor: '#f8f9fa',
+  },
+  successCard: {
+    backgroundColor: 'rgba(15, 23, 42, 0.88)',
+    borderRadius: 24,
+    padding: 32,
+    alignItems: 'center',
+    width: '100%',
+    borderWidth: 1.5,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  successIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    borderWidth: 1.5,
+    borderColor: '#10B981',
+  },
+  successIcon: {
+    fontSize: 40,
+    color: '#10B981',
+    fontWeight: 'bold',
   },
   successTitle: {
-    fontSize: 28,
-    color: '#28a745',
+    fontSize: 24,
+    color: '#10B981',
     fontWeight: 'bold',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  successDetailCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    width: '100%',
+    padding: 16,
+    borderRadius: 16,
     marginBottom: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   successText: {
-    fontSize: 18,
-    color: '#333',
+    fontSize: 14,
+    color: '#94A3B8',
     marginBottom: 8,
+    textAlign: 'center',
+  },
+  successValue: {
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
   timestamp: {
-    fontSize: 14,
-    color: '#6c757d',
-    marginTop: 16,
-    marginBottom: 32,
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 8,
+    textAlign: 'center',
   },
   doneBtn: {
     backgroundColor: '#003087',
+    borderColor: '#F5C40A',
+    borderWidth: 1.5,
     paddingHorizontal: 40,
-    paddingVertical: 16,
-    borderRadius: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    shadowColor: '#F5C40A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   doneBtnText: {
-    color: '#FFD700',
-    fontSize: 18,
+    color: '#F5C40A',
+    fontSize: 16,
     fontWeight: 'bold',
+    letterSpacing: 0.5,
   },
   processingOverlay: {
     position: 'absolute',
-    top: 20,
+    top: '30%',
     alignSelf: 'center',
-    backgroundColor: 'rgba(0, 48, 135, 0.95)', // Premium NHAI Blue
-    paddingVertical: 20,
+    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+    paddingVertical: 24,
     paddingHorizontal: 24,
-    borderRadius: 20,
+    borderRadius: 24,
     alignItems: 'center',
     width: '90%',
     borderWidth: 1.5,
-    borderColor: '#FFD700', // Premium NHAI Yellow border
+    borderColor: '#F5C40A',
+    shadowColor: '#F5C40A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 8,
   },
   processingTitle: {
-    color: '#FFD700',
+    color: '#F5C40A',
     fontSize: 16,
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 8,
+    letterSpacing: 0.5,
   },
   processingText: {
-    color: '#FFF',
-    fontSize: 13,
+    color: '#94A3B8',
+    fontSize: 12,
     textAlign: 'center',
     lineHeight: 18,
-    marginBottom: 6,
+    marginBottom: 10,
   },
   processingSubtext: {
-    color: '#FFD700',
+    color: '#F5C40A',
     fontSize: 11,
     fontStyle: 'italic',
     textAlign: 'center',
-  },
-  simulatorHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#1a1a1a',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
-    borderColor: '#333'
-  },
-  simulatorLabelDev: {
-    fontSize: 14,
-    color: '#fff',
-    fontWeight: '500',
-    marginRight: 10,
-  },
-  forceCaptureBtn: {
-    backgroundColor: '#003087',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#FFD700',
-    alignItems: 'center',
-  },
-  forceCaptureBtnText: {
-    color: '#FFD700',
-    fontSize: 14,
-    fontWeight: 'bold',
   }
 });
