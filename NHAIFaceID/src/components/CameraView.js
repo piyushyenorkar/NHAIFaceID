@@ -1,9 +1,15 @@
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { StyleSheet, Text, View, Dimensions, TouchableOpacity } from 'react-native';
-import { Camera, useCameraDevice, useCameraFormat, useFrameProcessor, runAsync } from 'react-native-vision-camera';
+import { Camera, useCameraDevice, useCameraFormat, useFrameProcessor, runAsync, VisionCameraProxy } from 'react-native-vision-camera';
 import Svg, { Line, Circle, Text as SvgText } from 'react-native-svg';
-import { detectFaces } from 'react-native-vision-camera-face-detector';
 import { useRunOnJS } from 'react-native-worklets-core';
+
+const faceDetectorPlugin = VisionCameraProxy.initFrameProcessorPlugin('detectFaces', {
+  performanceMode: 'fast',
+  contourMode: 'all',
+  landmarkMode: 'all',
+  classificationMode: 'all',
+});
 
 const { width, height } = Dimensions.get('window');
 
@@ -339,6 +345,9 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         return photo.path;
       }
       return null;
+    },
+    toggleCamera() {
+      setCameraPosition(prev => prev === 'front' ? 'back' : 'front');
     }
   }));
 
@@ -405,12 +414,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
     runAsync(frame, () => {
       'worklet';
       // Run MLKit face detection via frame processor plugin
-      const result = detectFaces(frame, {
-        performanceMode: 'fast',
-        contourMode: 'all',
-        landmarkMode: 'all',
-        classificationMode: 'all',
-      });
+      const result = faceDetectorPlugin.call(frame);
 
       // DIAGNOSTIC: dump raw result structure (throttled)
       if (frameCount.current % 60 === 1) {
@@ -603,16 +607,6 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         </Svg>
       )}
 
-      <TouchableOpacity style={styles.switchButton} onPress={toggleCamera}>
-        <Text style={styles.switchIcon}>🔄</Text>
-        <Text style={styles.switchText}>{cameraPosition === 'front' ? 'Front' : 'Back'}</Text>
-      </TouchableOpacity>
-
-      <View style={styles.textOverlay}>
-        <Text style={[styles.guidanceText, { color: activeColor === 'gray' ? 'white' : activeColor }]}>
-          {detectedFace ? 'Biometric Alignment complete' : 'Align face inside guides...'}
-        </Text>
-      </View>
     </View>
   );
 });

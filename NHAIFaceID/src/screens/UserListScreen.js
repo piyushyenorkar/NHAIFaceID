@@ -92,8 +92,8 @@ export default function UserListScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={{padding: 10, backgroundColor: '#003087', alignItems: 'flex-end'}}>
-        <TouchableOpacity style={{backgroundColor: '#dc3545', padding: 8, borderRadius: 6}} onPress={handleWipe}>
+      <View style={{padding: 12, backgroundColor: '#003087', alignItems: 'flex-end'}}>
+        <TouchableOpacity style={{backgroundColor: '#dc3545', padding: 10, borderRadius: 6}} onPress={handleWipe}>
           <Text style={{color: '#FFF', fontWeight: 'bold'}}>🗑️ Wipe All Test Data</Text>
         </TouchableOpacity>
       </View>
@@ -144,7 +144,7 @@ const styles = StyleSheet.create({
   },
   tab: {
     flex: 1,
-    paddingVertical: 15,
+    paddingVertical: 16,
     alignItems: 'center',
     borderBottomWidth: 2,
     borderBottomColor: 'transparent',
@@ -160,12 +160,12 @@ const styles = StyleSheet.create({
     color: '#003087',
   },
   listContainer: {
-    padding: 15,
+    padding: 16,
   },
   card: {
     backgroundColor: '#FFF',
     borderRadius: 10,
-    padding: 15,
+    padding: 16,
     marginBottom: 15,
     elevation: 2,
   },
@@ -200,7 +200,7 @@ const styles = StyleSheet.create({
   },
   hashContainer: {
     backgroundColor: '#000',
-    padding: 10,
+    padding: 12,
     borderRadius: 6,
     marginTop: 5,
   },
