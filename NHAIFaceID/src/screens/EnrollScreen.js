@@ -407,9 +407,9 @@ export default function EnrollScreen({ navigation }) {
         <Text style={styles.successText}>Name: {name}</Text>
         <Text style={styles.successText}>Employee ID: {employeeId}</Text>
         <Text style={styles.timestamp}>Enrolled on: {new Date().toLocaleString()}</Text>
-        
-        <TouchableOpacity 
-          style={styles.doneBtn} 
+
+        <TouchableOpacity
+          style={styles.doneBtn}
           onPress={() => navigation.navigate('Home')}
         >
           <Text style={styles.doneBtnText}>Return Home</Text>
@@ -424,7 +424,7 @@ export default function EnrollScreen({ navigation }) {
     <View style={styles.container}>
       {/* Top Input Form */}
       <View style={styles.formContainer}>
-        <TextInput 
+        <TextInput
           style={[styles.input, { color: '#000' }]}
           placeholder="Employee ID"
           placeholderTextColor="#666"
@@ -432,7 +432,7 @@ export default function EnrollScreen({ navigation }) {
           onChangeText={setEmployeeId}
           editable={enrollStatus === 'IDLE'}
         />
-        <TextInput 
+        <TextInput
           style={[styles.input, { color: '#000' }]}
           placeholder="Full Name"
           placeholderTextColor="#666"
@@ -477,7 +477,7 @@ export default function EnrollScreen({ navigation }) {
           onFaceDetected={handleFaceDetected}
           detectedFace={detectedFace}
         />
-        
+
         {/* Progress Overlay */}
         {enrollStatus === 'SCANNING' && (
           <View style={styles.progressOverlay}>
