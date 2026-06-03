@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { StyleSheet, Text, View, Dimensions, TouchableOpacity } from 'react-native';
-import { Camera, useCameraDevice, useCameraFormat, useFrameProcessor } from 'react-native-vision-camera';
+import { Camera, useCameraDevice, useCameraFormat, useFrameProcessor, runAsync } from 'react-native-vision-camera';
 import Svg, { Line, Circle, Text as SvgText } from 'react-native-svg';
 import { detectFaces } from 'react-native-vision-camera-face-detector';
 import { useRunOnJS } from 'react-native-worklets-core';
@@ -8,7 +8,8 @@ import { useRunOnJS } from 'react-native-worklets-core';
 const { width, height } = Dimensions.get('window');
 
 // Mathematically generate a dense 468-point face mesh scaled to the bounding box
-export function getFaceMesh468(box) {
+// Mathematically generate a dense 468-point face mesh scaled to the bounding box
+export function getFaceMesh468(box, contours = null) {
   if (!box) return [];
   let { x, y, w, h } = box;
   
@@ -21,118 +22,278 @@ export function getFaceMesh468(box) {
 
   const landmarks = [];
 
-  // 1. Face Silhouette/Outline: 36 points
-  for (let i = 0; i < 36; i++) {
-    const angle = (i / 36) * 2 * Math.PI;
-    const rx = 0.5 + 0.4 * Math.cos(angle);
-    let ry = 0.5 + 0.45 * Math.sin(angle);
-    if (ry > 0.5) {
-      const t = (rx - 0.5) / 0.4;
-      ry = 0.5 + 0.45 * t * t;
-    }
-    landmarks.push({ x: x + rx * w, y: y + ry * h });
-  }
+  // Check if we have valid real contours from MLKit
+  const hasRealContours = contours && 
+                          contours.FACE && contours.FACE.length > 0 &&
+                          contours.LEFT_EYE && contours.LEFT_EYE.length > 0 &&
+                          contours.RIGHT_EYE && contours.RIGHT_EYE.length > 0 &&
+                          contours.NOSE_BRIDGE && contours.NOSE_BRIDGE.length > 0 &&
+                          contours.NOSE_BOTTOM && contours.NOSE_BOTTOM.length > 0;
 
-  // 2. Inner Face Contours (Concentric rings for cheeks/chin): 3 rings of 36 points = 108 points
-  const ringRadii = [0.3, 0.2, 0.1];
-  for (let r = 0; r < 3; r++) {
-    const rad = ringRadii[r];
+  console.log('[CameraView] getFaceMesh468 hasRealContours:', hasRealContours, 'keys:', contours ? Object.keys(contours).join(', ') : 'null');
+
+  if (hasRealContours) {
+    landmarks.isSimulated = false; // Real MLKit contour data — variance-based spoof detection is valid
+    // 1. Face Silhouette/Outline: 36 points.
+    const realFace = contours.FACE;
+    for (let i = 0; i < 36; i++) {
+      const pt = realFace[i % realFace.length];
+      landmarks.push({ x: pt.x, y: pt.y });
+    }
+
+    // 2. Inner Face Contours: 3 rings of 36 points = 108 points
+    const noseBridgePoints = contours.NOSE_BRIDGE;
+    const noseCenter = noseBridgePoints.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 });
+    noseCenter.x /= noseBridgePoints.length;
+    noseCenter.y /= noseBridgePoints.length;
+
+    const ringFactors = [0.6, 0.4, 0.2];
+    for (let r = 0; r < 3; r++) {
+      const f = ringFactors[r];
+      for (let i = 0; i < 36; i++) {
+        const pt = realFace[i % realFace.length];
+        landmarks.push({
+          x: pt.x * f + noseCenter.x * (1 - f),
+          y: pt.y * f + noseCenter.y * (1 - f)
+        });
+      }
+    }
+
+    // 3. Forehead mesh grid: 5 rows of 12 points = 60 points
+    const eyeCenterL = contours.LEFT_EYE.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 });
+    eyeCenterL.x /= contours.LEFT_EYE.length;
+    eyeCenterL.y /= contours.LEFT_EYE.length;
+
+    const eyeCenterR = contours.RIGHT_EYE.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 });
+    eyeCenterR.x /= contours.RIGHT_EYE.length;
+    eyeCenterR.y /= contours.RIGHT_EYE.length;
+
+    const foreheadTopY = y;
+    const eyebrowsY = (eyeCenterL.y + eyeCenterR.y) - 0.08 * h;
+
+    for (let row = 0; row < 5; row++) {
+      const t = row / 4;
+      const ry = eyebrowsY * (1 - t) + foreheadTopY * t;
+      for (let col = 0; col < 12; col++) {
+        const rx = x + (0.25 + (0.5 / 11) * col) * w;
+        landmarks.push({ x: rx, y: ry });
+      }
+    }
+
+    // 4. Eyebrows: left (16 points), right (16 points) = 32 points
+    const leftEyebrow = contours.LEFT_EYEBROW_TOP || contours.LEFT_EYE;
+    const rightEyebrow = contours.RIGHT_EYEBROW_TOP || contours.RIGHT_EYE;
+    for (let row = 0; row < 2; row++) {
+      for (let i = 0; i < 8; i++) {
+        const pt = leftEyebrow[(i + row * 2) % leftEyebrow.length];
+        landmarks.push({ x: pt.x, y: pt.y });
+      }
+    }
+    for (let row = 0; row < 2; row++) {
+      for (let i = 0; i < 8; i++) {
+        const pt = rightEyebrow[(i + row * 2) % rightEyebrow.length];
+        landmarks.push({ x: pt.x, y: pt.y });
+      }
+    }
+
+    // 5. Nose Structure: 54 points
+    const noseBridge = contours.NOSE_BRIDGE;
+    const noseBottom = contours.NOSE_BOTTOM;
+    for (let row = 0; row < 6; row++) {
+      const t = row / 5;
+      const startPt = noseBridge[Math.floor(t * (noseBridge.length - 1))];
+      const endPt = noseBottom[Math.floor(t * (noseBottom.length - 1))];
+      for (let col = 0; col < 4; col++) {
+        const f = col / 3;
+        landmarks.push({
+          x: startPt.x * (1 - f) + endPt.x * f,
+          y: startPt.y * (1 - f) + endPt.y * f
+        });
+      }
+    }
+    for (let row = 0; row < 6; row++) {
+      const t = row / 5;
+      const basePt = noseBottom[row % noseBottom.length];
+      for (let col = 0; col < 5; col++) {
+        const rx = basePt.x + (col - 2) * 0.02 * w;
+        landmarks.push({ x: rx, y: basePt.y + t * 0.02 * h });
+      }
+    }
+
+    // 6. Eyes: Left (48 points), Right (48 points) = 96 points
+    const realEyeL = contours.LEFT_EYE;
+    const realEyeR = contours.RIGHT_EYE;
+    const scaleFactors = [1.2, 1.0, 0.8];
+    for (let r = 0; r < 3; r++) {
+      const f = scaleFactors[r];
+      for (let i = 0; i < 16; i++) {
+        const ptL = realEyeL[i % realEyeL.length];
+        landmarks.push({
+          x: eyeCenterL.x + (ptL.x - eyeCenterL.x) * f,
+          y: eyeCenterL.y + (ptL.y - eyeCenterL.y) * f
+        });
+        const ptR = realEyeR[i % realEyeR.length];
+        landmarks.push({
+          x: eyeCenterR.x + (ptR.x - eyeCenterR.x) * f,
+          y: eyeCenterR.y + (ptR.y - eyeCenterR.y) * f
+        });
+      }
+    }
+
+    // 7. Lips/Mouth area: 82 points
+    const upperLip = contours.UPPER_LIP_TOP || contours.FACE;
+    const lowerLip = contours.LOWER_LIP_BOTTOM || contours.FACE;
+    const mouthCenter = {
+      x: (upperLip[0].x + lowerLip[0].x) / 2,
+      y: (upperLip[0].y + lowerLip[0].y) / 2
+    };
+    
+    const lipFactors = [1.1, 0.9, 0.7];
+    for (let r = 0; r < 3; r++) {
+      const f = lipFactors[r];
+      for (let i = 0; i < 16; i++) {
+        const lipPt = i < 8 ? upperLip[i % upperLip.length] : lowerLip[(i - 8) % lowerLip.length];
+        landmarks.push({
+          x: mouthCenter.x + (lipPt.x - mouthCenter.x) * f,
+          y: mouthCenter.y + (lipPt.y - mouthCenter.y) * f
+        });
+      }
+    }
+    for (let r = 0; r < 2; r++) {
+      const f = 0.5 - r * 0.2;
+      for (let i = 0; i < 12; i++) {
+        const lipPt = i < 6 ? upperLip[i % upperLip.length] : lowerLip[(i - 6) % lowerLip.length];
+        landmarks.push({
+          x: mouthCenter.x + (lipPt.x - mouthCenter.x) * f,
+          y: mouthCenter.y + (lipPt.y - mouthCenter.y) * f
+        });
+      }
+    }
+    for (let i = 0; i < 10; i++) {
+      const t = i / 9;
+      const startX = mouthCenter.x - 0.05 * w;
+      const endX = mouthCenter.x + 0.05 * w;
+      landmarks.push({
+        x: startX * (1 - t) + endX * t,
+        y: mouthCenter.y
+      });
+    }
+
+  } else {
+    landmarks.isSimulated = true; // Mathematical fallback mesh — variance will be zero, skip spoof detection
+    // 1. Face Silhouette/Outline: 36 points
     for (let i = 0; i < 36; i++) {
       const angle = (i / 36) * 2 * Math.PI;
-      const rx = 0.5 + rad * Math.cos(angle);
-      const ry = 0.5 + rad * 1.1 * Math.sin(angle);
+      const rx = 0.5 + 0.4 * Math.cos(angle);
+      let ry = 0.5 + 0.45 * Math.sin(angle);
+      if (ry > 0.5) {
+        const t = (rx - 0.5) / 0.4;
+        ry = 0.5 + 0.45 * t * t;
+      }
       landmarks.push({ x: x + rx * w, y: y + ry * h });
     }
-  }
 
-  // 3. Forehead mesh grid: 5 rows of 12 points = 60 points
-  for (let row = 0; row < 5; row++) {
-    const ry = 0.12 + 0.03 * row;
-    for (let col = 0; col < 12; col++) {
-      const rx = 0.25 + (0.5 / 11) * col;
-      const offset = 0.02 * Math.sin((col / 11) * Math.PI);
-      landmarks.push({ x: x + rx * w, y: y + (ry - offset) * h });
+    // 2. Inner Face Contours (Concentric rings for cheeks/chin): 3 rings of 36 points = 108 points
+    const ringRadii = [0.3, 0.2, 0.1];
+    for (let r = 0; r < 3; r++) {
+      const rad = ringRadii[r];
+      for (let i = 0; i < 36; i++) {
+        const angle = (i / 36) * 2 * Math.PI;
+        const rx = 0.5 + rad * Math.cos(angle);
+        const ry = 0.5 + rad * 1.1 * Math.sin(angle);
+        landmarks.push({ x: x + rx * w, y: y + ry * h });
+      }
     }
-  }
 
-  // 4. Eyebrows: left (16 points), right (16 points) = 32 points
-  for (let row = 0; row < 2; row++) {
-    const baseRy = 0.26 + 0.02 * row;
-    for (let i = 0; i < 8; i++) {
-      const rx = 0.2 + 0.03 * i;
-      const ry = baseRy - 0.03 * Math.sin((i / 7) * Math.PI);
-      landmarks.push({ x: x + rx * w, y: y + ry * h });
+    // 3. Forehead mesh grid: 5 rows of 12 points = 60 points
+    for (let row = 0; row < 5; row++) {
+      const ry = 0.12 + 0.03 * row;
+      for (let col = 0; col < 12; col++) {
+        const rx = 0.25 + (0.5 / 11) * col;
+        const offset = 0.02 * Math.sin((col / 11) * Math.PI);
+        landmarks.push({ x: x + rx * w, y: y + (ry - offset) * h });
+      }
     }
-  }
-  for (let row = 0; row < 2; row++) {
-    const baseRy = 0.26 + 0.02 * row;
-    for (let i = 0; i < 8; i++) {
-      const rx = 0.56 + 0.03 * i;
-      const ry = baseRy - 0.03 * Math.sin((i / 7) * Math.PI);
-      landmarks.push({ x: x + rx * w, y: y + ry * h });
-    }
-  }
 
-  // 5. Nose Structure: 54 points
-  for (let row = 0; row < 6; row++) {
-    const ry = 0.3 + 0.04 * row;
-    for (let col = 0; col < 4; col++) {
-      const rx = 0.47 + 0.02 * col;
-      landmarks.push({ x: x + rx * w, y: y + ry * h });
+    // 4. Eyebrows: left (16 points), right (16 points) = 32 points
+    for (let row = 0; row < 2; row++) {
+      const baseRy = 0.26 + 0.02 * row;
+      for (let i = 0; i < 8; i++) {
+        const rx = 0.2 + 0.03 * i;
+        const ry = baseRy - 0.03 * Math.sin((i / 7) * Math.PI);
+        landmarks.push({ x: x + rx * w, y: y + ry * h });
+      }
     }
-  }
-  for (let row = 0; row < 6; row++) {
-    const ry = 0.54 + 0.02 * row;
-    for (let col = 0; col < 5; col++) {
-      const rx = 0.4 + 0.05 * col;
-      landmarks.push({ x: x + rx * w, y: y + ry * h });
+    for (let row = 0; row < 2; row++) {
+      const baseRy = 0.26 + 0.02 * row;
+      for (let i = 0; i < 8; i++) {
+        const rx = 0.56 + 0.03 * i;
+        const ry = baseRy - 0.03 * Math.sin((i / 7) * Math.PI);
+        landmarks.push({ x: x + rx * w, y: y + ry * h });
+      }
     }
-  }
 
-  // 6. Eyes: Left (48 points), Right (48 points) = 96 points
-  const eyeCenterL = { cx: 0.33, cy: 0.36 };
-  const eyeCenterR = { cx: 0.67, cy: 0.36 };
-  const eyeRadii = [0.06, 0.04, 0.02];
-  for (let r = 0; r < 3; r++) {
-    const rad = eyeRadii[r];
-    for (let i = 0; i < 16; i++) {
-      const angle = (i / 16) * 2 * Math.PI;
-      const rxL = eyeCenterL.cx + rad * Math.cos(angle);
-      const ryL = eyeCenterL.cy + rad * 0.7 * Math.sin(angle);
-      landmarks.push({ x: x + rxL * w, y: y + ryL * h });
-      
-      const rxR = eyeCenterR.cx + rad * Math.cos(angle);
-      const ryR = eyeCenterR.cy + rad * 0.7 * Math.sin(angle);
-      landmarks.push({ x: x + rxR * w, y: y + ryR * h });
+    // 5. Nose Structure: 54 points
+    for (let row = 0; row < 6; row++) {
+      const ry = 0.3 + 0.04 * row;
+      for (let col = 0; col < 4; col++) {
+        const rx = 0.47 + 0.02 * col;
+        landmarks.push({ x: x + rx * w, y: y + ry * h });
+      }
     }
-  }
+    for (let row = 0; row < 6; row++) {
+      const ry = 0.54 + 0.02 * row;
+      for (let col = 0; col < 5; col++) {
+        const rx = 0.4 + 0.05 * col;
+        landmarks.push({ x: x + rx * w, y: y + ry * h });
+      }
+    }
 
-  // 7. Lips/Mouth area: 82 points
-  const mouthCenter = { cx: 0.5, cy: 0.74 };
-  const mouthRadii = [0.14, 0.10, 0.06];
-  for (let r = 0; r < 3; r++) {
-    const rad = mouthRadii[r];
-    for (let i = 0; i < 16; i++) {
-      const angle = (i / 16) * 2 * Math.PI;
-      const rx = mouthCenter.cx + rad * Math.cos(angle);
-      const ry = mouthCenter.cy + rad * 0.5 * Math.sin(angle);
+    // 6. Eyes: Left (48 points), Right (48 points) = 96 points
+    const eyeCenterL = { cx: 0.33, cy: 0.36 };
+    const eyeCenterR = { cx: 0.67, cy: 0.36 };
+    const eyeRadii = [0.06, 0.04, 0.02];
+    for (let r = 0; r < 3; r++) {
+      const rad = eyeRadii[r];
+      for (let i = 0; i < 16; i++) {
+        const angle = (i / 16) * 2 * Math.PI;
+        const rxL = eyeCenterL.cx + rad * Math.cos(angle);
+        const ryL = eyeCenterL.cy + rad * 0.7 * Math.sin(angle);
+        landmarks.push({ x: x + rxL * w, y: y + ryL * h });
+        
+        const rxR = eyeCenterR.cx + rad * Math.cos(angle);
+        const ryR = eyeCenterR.cy + rad * 0.7 * Math.sin(angle);
+        landmarks.push({ x: x + rxR * w, y: y + ryR * h });
+      }
+    }
+
+    // 7. Lips/Mouth area: 82 points
+    const mouthCenter = { cx: 0.5, cy: 0.74 };
+    const mouthRadii = [0.14, 0.10, 0.06];
+    for (let r = 0; r < 3; r++) {
+      const rad = mouthRadii[r];
+      for (let i = 0; i < 16; i++) {
+        const angle = (i / 16) * 2 * Math.PI;
+        const rx = mouthCenter.cx + rad * Math.cos(angle);
+        const ry = mouthCenter.cy + rad * 0.5 * Math.sin(angle);
+        landmarks.push({ x: x + rx * w, y: y + ry * h });
+      }
+    }
+    const mouthRadiiInner = [0.04, 0.02];
+    for (let r = 0; r < 2; r++) {
+      const rad = mouthRadiiInner[r];
+      for (let i = 0; i < 12; i++) {
+        const angle = (i / 12) * 2 * Math.PI;
+        const rx = mouthCenter.cx + rad * Math.cos(angle);
+        const ry = mouthCenter.cy + rad * 0.4 * Math.sin(angle);
+        landmarks.push({ x: x + rx * w, y: y + ry * h });
+      }
+    }
+    for (let i = 0; i < 10; i++) {
+      const rx = 0.34 + 0.035 * i;
+      const ry = 0.74;
       landmarks.push({ x: x + rx * w, y: y + ry * h });
     }
-  }
-  const mouthRadiiInner = [0.04, 0.02];
-  for (let r = 0; r < 2; r++) {
-    const rad = mouthRadiiInner[r];
-    for (let i = 0; i < 12; i++) {
-      const angle = (i / 12) * 2 * Math.PI;
-      const rx = mouthCenter.cx + rad * Math.cos(angle);
-      const ry = mouthCenter.cy + rad * 0.4 * Math.sin(angle);
-      landmarks.push({ x: x + rx * w, y: y + ry * h });
-    }
-  }
-  for (let i = 0; i < 10; i++) {
-    const rx = 0.34 + 0.035 * i;
-    const ry = 0.74;
-    landmarks.push({ x: x + rx * w, y: y + ry * h });
   }
 
   return landmarks;
@@ -144,12 +305,16 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
   const device = useCameraDevice(cameraPosition);
 
   const format = useCameraFormat(device, [
-    { photoResolution: { width: 640, height: 480 } },
-    { videoResolution: { width: 640, height: 480 } }
+    { fps: 30 },
+    { videoResolution: { width: 1280, height: 720 } }
   ]);
 
   const [hasPermission, setHasPermission] = useState(false);
   const [layoutDims, setLayoutDims] = useState({ w: width, h: height });
+
+  const exposureValue = device?.supportsExposureBias 
+    ? Math.min(1.2, device.maxExposureBias ?? 1.2) 
+    : undefined;
 
   const handleLayout = (event) => {
     const { width: lw, height: lh } = event.nativeEvent.layout;
@@ -183,10 +348,15 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
 
   const frameCount = useRef(0);
 
-  const handleFaceResult = (box) => {
+  const handleFaceResult = (box, contours, euler = null) => {
     if (onFaceDetectedRef.current) {
       // Calculate the 468 simulated landmarks safely on the JS thread!
-      const simulatedLandmarks = getFaceMesh468(box);
+      const simulatedLandmarks = getFaceMesh468(box, contours);
+      if (simulatedLandmarks && euler) {
+        simulatedLandmarks.yawAngle = euler.yawAngle;
+        simulatedLandmarks.pitchAngle = euler.pitchAngle;
+        simulatedLandmarks.rollAngle = euler.rollAngle;
+      }
       onFaceDetectedRef.current(box, simulatedLandmarks, null);
     }
   };
@@ -206,43 +376,71 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
 
     frameCount.current += 1;
 
-    // Run MLKit face detection via frame processor plugin
-    const result = detectFaces(frame, {
-      performanceMode: 'fast',
-      contourMode: 'all',
-      landmarkMode: 'none',
-      classificationMode: 'none',
-      minFaceSize: 0.15,
-      trackingEnabled: false,
-      convertFrame: false
-    });
+    runAsync(frame, () => {
+      'worklet';
+      // Run MLKit face detection via frame processor plugin
+      const result = detectFaces(frame, {
+        performanceMode: 'fast',
+        contourMode: 'all',
+        landmarkMode: 'all',
+        classificationMode: 'all',
+      });
+      const faces = Array.isArray(result) ? result : (result && result.faces ? result.faces : []);
 
-    let facesArray = [];
-    if (result && result.faces) {
-      facesArray = typeof result.faces === 'string' ? JSON.parse(result.faces) : result.faces;
-    }
+      if (faces.length > 0) {
+        const face = faces[0];
+        const bounds = face.bounds || face.boundingBox || face;
+        const normalizedBox = {
+          x: (bounds.x ?? bounds.left ?? 0) / width,
+          y: (bounds.y ?? bounds.top ?? 0) / height,
+          w: (bounds.width ?? bounds.w ?? 0) / width,
+          h: (bounds.height ?? bounds.h ?? 0) / height,
+        };
 
-    if (facesArray.length > 0) {
-      const face = facesArray[0];
-      const bounds = face.bounds || face.boundingBox || face;
-      const fw = frame.width || width;
-      const fh = frame.height || height;
-      
-      const normalizedBox = {
-        x: (bounds.x ?? bounds.left ?? 0) / fw,
-        y: (bounds.y ?? bounds.top ?? 0) / fh,
-        w: (bounds.width ?? bounds.w ?? 0) / fw,
-        h: (bounds.height ?? bounds.h ?? 0) / fh,
-      };
+        // Extract unique biometric signals that differ per person
+        const faceMetrics = {
+          yawAngle: typeof face.yawAngle === 'number' ? face.yawAngle : 0,
+          pitchAngle: typeof face.pitchAngle === 'number' ? face.pitchAngle : 0,
+          rollAngle: typeof face.rollAngle === 'number' ? face.rollAngle : 0,
+          leftEyeOpen: typeof face.leftEyeOpenProbability === 'number' ? face.leftEyeOpenProbability : 0.5,
+          rightEyeOpen: typeof face.rightEyeOpenProbability === 'number' ? face.rightEyeOpenProbability : 0.5,
+          smiling: typeof face.smilingProbability === 'number' ? face.smilingProbability : 0.5,
+        };
 
-      // Embedding and simulatedLandmarks are computed on the JS thread
-      // to prevent Worklet sharing errors with complex Math functions.
-      runHandleFaceResult(normalizedBox);
-    } else {
-      if (frameCount.current % 5 === 0) {
-        runHandleNoFace();
+        // Try to extract contours - handle different formats from different library versions
+        const normalizedContours = {};
+        const rawContours = face.contours;
+        if (rawContours && typeof rawContours === 'object') {
+          const keys = [
+            'FACE', 'LEFT_CHEEK', 'LEFT_EYE', 'LEFT_EYEBROW_BOTTOM', 'LEFT_EYEBROW_TOP',
+            'LOWER_LIP_BOTTOM', 'LOWER_LIP_TOP', 'NOSE_BOTTOM', 'NOSE_BRIDGE',
+            'RIGHT_CHEEK', 'RIGHT_EYE', 'RIGHT_EYEBROW_BOTTOM', 'RIGHT_EYEBROW_TOP',
+            'UPPER_LIP_BOTTOM', 'UPPER_LIP_TOP'
+          ];
+          for (let i = 0; i < keys.length; i++) {
+            const key = keys[i];
+            const points = rawContours[key];
+            if (points && points.length > 0) {
+              const normPoints = [];
+              for (let j = 0; j < points.length; j++) {
+                normPoints.push({
+                  x: points[j].x / width,
+                  y: points[j].y / height
+                });
+              }
+              normalizedContours[key] = normPoints;
+            }
+          }
+        }
+
+        // Pass both contours AND face metrics to the JS thread
+        runHandleFaceResult(normalizedBox, normalizedContours, faceMetrics);
+      } else {
+        if (frameCount.current % 5 === 0) {
+          runHandleNoFace();
+        }
       }
-    }
+    });
   }, [isActive]);
 
   const toggleCamera = () => {
@@ -259,16 +457,14 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
 
   if (detectedFace && detectedFace.bbox) {
     activeBox = {
-      x: isFront 
-        ? (1.0 - (detectedFace.bbox.x + detectedFace.bbox.w)) * layoutDims.w 
-        : detectedFace.bbox.x * layoutDims.w,
+      x: detectedFace.bbox.x * layoutDims.w,
       y: detectedFace.bbox.y * layoutDims.h,
       w: detectedFace.bbox.w * layoutDims.w,
       h: detectedFace.bbox.h * layoutDims.h
     };
     activeColor = detectedFace.color || '#00FF00';
     activeKeypoints = (detectedFace.landmarks || []).map(kp => ({
-      x: isFront ? (1.0 - kp.x) * layoutDims.w : kp.x * layoutDims.w,
+      x: kp.x * layoutDims.w,
       y: kp.y * layoutDims.h,
       name: kp.name || ''
     }));
@@ -287,6 +483,8 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         format={format}
         frameProcessor={frameProcessor}
         pixelFormat="yuv"
+        lowLightBoost={device?.supportsLowLightBoost}
+        exposure={exposureValue}
       />
       
       {activeBox && (

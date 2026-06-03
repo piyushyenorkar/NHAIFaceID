@@ -31,14 +31,14 @@ async function initNativeImports() {
     return true;
   }
   try {
-    const ort = await import('onnxruntime-react-native');
+    const ort = require('onnxruntime-react-native');
     InferenceSession = ort.InferenceSession;
     Tensor = ort.Tensor;
     
-    const fs = await import('react-native-fs');
+    const fs = require('react-native-fs');
     RNFS = fs.default || fs;
     
-    const rn = await import('react-native');
+    const rn = require('react-native');
     Image = rn.Image;
     return true;
   } catch (e) {
