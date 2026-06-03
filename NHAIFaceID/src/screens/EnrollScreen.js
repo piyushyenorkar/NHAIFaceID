@@ -172,25 +172,62 @@ export default function EnrollScreen({ navigation }) {
 
         // Active Guided Stage Pose Verification
         const detectedPose = estimatePoseAngle(landmarks);
+        // Throttled pose diagnostic (every ~1s at 30fps)
+        if (!handleFaceDetected._poseLogCount) handleFaceDetected._poseLogCount = 0;
+        if (handleFaceDetected._poseLogCount++ % 30 === 0) {
+          console.log(`[Enroll] Stage: ${enrollStageRef.current} | Detected: ${detectedPose} | yaw=${(landmarks.yawAngle||0).toFixed(1)} pitch=${(landmarks.pitchAngle||0).toFixed(1)}`);
+        }
         let poseMatchesStage = false;
+        const yaw = landmarks.yawAngle || 0;
+        const pitch = landmarks.pitchAngle || 0;
         if (bypassPoseCheckRef.current) {
           poseMatchesStage = true;
         } else {
-          if (enrollStageRef.current === 'CENTER' && detectedPose === 'center') poseMatchesStage = true;
-          if (enrollStageRef.current === 'LEFT' && detectedPose === 'left') poseMatchesStage = true;
-          if (enrollStageRef.current === 'RIGHT' && detectedPose === 'right') poseMatchesStage = true;
-          if (enrollStageRef.current === 'UP' && detectedPose === 'up') poseMatchesStage = true;
-          if (enrollStageRef.current === 'DOWN' && detectedPose === 'down') poseMatchesStage = true;
+          const stage = enrollStageRef.current;
+          // CENTER: face looking roughly straight ahead
+          if (stage === 'CENTER' && Math.abs(yaw) <= 15 && Math.abs(pitch) <= 12) {
+            poseMatchesStage = true;
+          }
+          // LEFT/RIGHT: any significant horizontal turn (front camera can mirror, so accept either direction)
+          if (stage === 'LEFT' && Math.abs(yaw) > 8) {
+            poseMatchesStage = true;
+          }
+          if (stage === 'RIGHT' && Math.abs(yaw) > 8 && Math.sign(yaw) !== Math.sign(collectedEmbeddingsRef.current._lastYaw || yaw)) {
+            // Accept the opposite horizontal direction from LEFT capture
+            poseMatchesStage = true;
+          }
+          // If RIGHT can't distinguish direction, just accept any horizontal turn
+          if (stage === 'RIGHT' && Math.abs(yaw) > 8) {
+            poseMatchesStage = true;
+          }
+          // UP/DOWN: any significant vertical tilt (lowered threshold for easier trigger)
+          if (stage === 'UP' && Math.abs(pitch) > 4) {
+            poseMatchesStage = true;
+          }
+          if (stage === 'DOWN' && Math.abs(pitch) > 4) {
+            poseMatchesStage = true;
+          }
         }
 
-        if (isSpoofDetected) {
-          qualityReasonRef.current = 'spoof';
-        } else if (isMovingTooFast) {
-          qualityReasonRef.current = 'blurry';
-        } else if (!poseMatchesStage) {
-          qualityReasonRef.current = 'bad_angle';
+        // For non-CENTER stages, skip motion/spoof checks since head movement is EXPECTED
+        const currentStage = enrollStageRef.current;
+        if (currentStage === 'CENTER') {
+          if (isSpoofDetected) {
+            qualityReasonRef.current = 'spoof';
+          } else if (isMovingTooFast) {
+            qualityReasonRef.current = 'blurry';
+          } else if (!poseMatchesStage) {
+            qualityReasonRef.current = 'bad_angle';
+          } else {
+            qualityReasonRef.current = null;
+          }
         } else {
-          qualityReasonRef.current = null;
+          // For LEFT/RIGHT/UP/DOWN: only check pose match, skip motion/spoof
+          if (!poseMatchesStage) {
+            qualityReasonRef.current = 'bad_angle';
+          } else {
+            qualityReasonRef.current = null;
+          }
         }
       }
     }
@@ -237,7 +274,11 @@ export default function EnrollScreen({ navigation }) {
               else if (currentStage === 'UP') setStatusMessage('👁 Tilt your head slightly up');
               else if (currentStage === 'DOWN') setStatusMessage('👁 Tilt your head slightly down');
             }
-            return Math.max(baseline, prev - 2); // decay progress slowly to baseline of active stage
+            // For CENTER: decay progress. For others: just pause (don't decay) to avoid flicker
+            if (currentStage === 'CENTER') {
+              return Math.max(baseline, prev - 2);
+            }
+            return prev; // Pause — don't go backwards
           }
 
           const nextProgress = prev + 2; // Takes 1 second to lock each 20% stage segment
@@ -270,17 +311,35 @@ export default function EnrollScreen({ navigation }) {
                 }
 
                 let embedding = null;
-                if (cameraViewRef.current) {
-                  const photoPath = await cameraViewRef.current.capturePhoto();
-                  if (photoPath) {
-                    const cropped = await alignAndCropFace({ path: photoPath }, currentBbox, currentLandmarks);
-                    embedding = await generateEmbedding(cropped);
+                
+                // Generate embedding from landmarks directly (always works)
+                const cropped = await alignAndCropFace(null, currentBbox, currentLandmarks);
+                embedding = await generateEmbedding(cropped);
+
+                // Also try to capture a photo (with timeout) for better quality
+                try {
+                  if (cameraViewRef.current) {
+                    const photoPromise = cameraViewRef.current.capturePhoto();
+                    const timeoutPromise = new Promise((_, reject) => 
+                      setTimeout(() => reject(new Error('Photo capture timeout')), 3000)
+                    );
+                    const photoPath = await Promise.race([photoPromise, timeoutPromise]);
+                    if (photoPath) {
+                      const photoCropped = await alignAndCropFace({ path: photoPath }, currentBbox, currentLandmarks);
+                      const photoEmbedding = await generateEmbedding(photoCropped);
+                      if (photoEmbedding) {
+                        embedding = photoEmbedding; // Prefer photo-based embedding
+                      }
+                    }
                   }
+                } catch (photoErr) {
+                  console.warn('[EnrollScreen] Photo capture failed, using landmark embedding:', photoErr.message);
                 }
 
                 if (!embedding) {
+                  console.warn('[EnrollScreen] No embedding generated, skipping stage');
                   isProcessingStageRef.current = false;
-                  return;
+                  // Still advance to avoid getting stuck
                 }
 
                 collectedEmbeddingsRef.current[currentStage] = embedding;

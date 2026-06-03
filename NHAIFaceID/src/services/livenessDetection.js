@@ -349,15 +349,16 @@ export function estimatePoseAngle(landmarks) {
     const pitch = landmarks.pitchAngle;
     
     // Classify based on MLKit Euler angles in degrees
-    if (yaw < -13) {
+    // Widened thresholds for real-world usability
+    if (yaw < -10) {
       return 'left';
-    } else if (yaw > 13) {
+    } else if (yaw > 10) {
       return 'right';
-    } else if (pitch > 10) {
+    } else if (pitch > 8) {
       return 'up';
-    } else if (pitch < -10) {
+    } else if (pitch < -8) {
       return 'down';
-    } else if (Math.abs(yaw) <= 10 && Math.abs(pitch) <= 8) {
+    } else if (Math.abs(yaw) <= 15 && Math.abs(pitch) <= 12) {
       return 'center';
     }
     return 'unknown';
