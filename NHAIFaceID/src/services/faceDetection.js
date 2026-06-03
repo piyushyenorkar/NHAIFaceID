@@ -92,6 +92,7 @@ export async function detectFace(image) {
       { x: 350 / imgWidth, y: 280 / imgHeight, name: 'left_ear' }
     ];
     landmarks.isSpoof = isSpoof;
+    landmarks.isSimulated = true; // Mock fallback — no real detection data, skip variance-based spoof check
 
     return {
       detected: true,

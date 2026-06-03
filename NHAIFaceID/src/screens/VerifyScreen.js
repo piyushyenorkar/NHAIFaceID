@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Animated } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Animated, Switch } from 'react-native';
 import CameraView from '../components/CameraView';
 import NHAIFaceSDK from '../NHAIFaceSDK';
 import RNFS from 'react-native-fs';
@@ -7,6 +7,7 @@ import { decodeJpeg } from '@tensorflow/tfjs-react-native/dist/decode_image';
 
 import { Buffer } from 'buffer';
 import { alignAndCropFace, generateEmbedding } from '../services/faceRecognition';
+import { calculateLandmarksVariance, checkPoseAngle } from '../services/livenessDetection';
 
 function base64ToUint8Array(base64) {
   return new Uint8Array(Buffer.from(base64, 'base64'));
@@ -17,6 +18,7 @@ export default function VerifyScreen({ navigation }) {
   const [matchData, setMatchData] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [detectedFace, setDetectedFace] = useState(null);
+  const [simulateSpoof, setSimulateSpoof] = useState(false);
   
   // Scanning progress states
   const [progress, setProgress] = useState(0);
@@ -27,6 +29,9 @@ export default function VerifyScreen({ navigation }) {
   const progressIntervalRef = useRef(null);
   const confidenceAnim = useRef(new Animated.Value(0)).current;
   const isMountedRef = useRef(true);
+  const landmarksHistoryRef = useRef([]);
+  const boxHistoryRef = useRef([]);
+  const qualityReasonRef = useRef(null);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -65,6 +70,52 @@ export default function VerifyScreen({ navigation }) {
         if (embedding) {
           latestEmbeddingRef.current = embedding;
         }
+
+        // Push relative landmarks to history
+        if (bbox.w > 0 && bbox.h > 0) {
+          const relativeLandmarks = landmarks.map(pt => ({
+            x: (pt.x - bbox.x) / bbox.w,
+            y: (pt.y - bbox.y) / bbox.h
+          }));
+          // Propagate the isSimulated flag so variance check knows if this frame is real data
+          relativeLandmarks.isSimulated = landmarks.isSimulated === true;
+          landmarksHistoryRef.current.push(relativeLandmarks);
+          if (landmarksHistoryRef.current.length > 20) {
+            landmarksHistoryRef.current.shift();
+          }
+        }
+
+        // Bounding Box motion stability check
+        boxHistoryRef.current.push({ x: bbox.x, y: bbox.y, w: bbox.w, h: bbox.h });
+        if (boxHistoryRef.current.length > 5) {
+          boxHistoryRef.current.shift();
+        }
+
+        let isMovingTooFast = false;
+        if (boxHistoryRef.current.length >= 3) {
+          let totalDiff = 0;
+          const history = boxHistoryRef.current;
+          for (let i = 1; i < history.length; i++) {
+            const prevCenter = { x: history[i-1].x + history[i-1].w/2, y: history[i-1].y + history[i-1].h/2 };
+            const currCenter = { x: history[i].x + history[i].w/2, y: history[i].y + history[i].h/2 };
+            totalDiff += Math.sqrt(Math.pow(currCenter.x - prevCenter.x, 2) + Math.pow(currCenter.y - prevCenter.y, 2));
+          }
+          const avgDiff = totalDiff / (history.length - 1);
+          if (avgDiff >= 0.035) {
+            isMovingTooFast = true;
+          }
+        }
+
+        // Pose Angle Check
+        const poseResult = checkPoseAngle(landmarks);
+
+        if (!poseResult.pass) {
+          qualityReasonRef.current = 'bad_angle';
+        } else if (isMovingTooFast) {
+          qualityReasonRef.current = 'blurry';
+        } else {
+          qualityReasonRef.current = null;
+        }
       }
     }
   };
@@ -81,12 +132,24 @@ export default function VerifyScreen({ navigation }) {
     lastDetectedRef.current = 0;
     setDetectedFace(null);
     setIsProcessing(false);
+    landmarksHistoryRef.current = []; // Clear history at start of scan
+    boxHistoryRef.current = [];
+    qualityReasonRef.current = null;
 
     progressIntervalRef.current = setInterval(() => {
       const faceDetected = Date.now() - lastDetectedRef.current < 800;
 
       if (faceDetected) {
         setProgress(prev => {
+          if (qualityReasonRef.current) {
+            setStatusMessage(
+              qualityReasonRef.current === 'bad_angle'
+                ? '👁 Look straight at camera'
+                : '📷 Hold still — camera adjusting'
+            );
+            return Math.max(0, prev - 15); // Decay progress quickly if quality fails
+          }
+
           const nextProgress = prev + 25; // 4 increments of 25 = 400ms
           
           if (nextProgress < 50) {
@@ -107,6 +170,22 @@ export default function VerifyScreen({ navigation }) {
                   const currentLandmarks = latestLandmarksRef.current;
                   const currentBbox = latestBboxRef.current;
 
+                  // Calculate landmark variance over history
+                  const avgVariance = calculateLandmarksVariance(landmarksHistoryRef.current);
+                  console.log('[VerifyScreen] Landmark variance:', avgVariance);
+
+                  // Skip variance spoof check if any frame used the simulated mathematical mesh
+                  // (its relative-landmark positions are constant by design, giving a false zero-variance)
+                  const hasSimulatedInHistory = landmarksHistoryRef.current.some(f => f.isSimulated === true);
+
+                  // If average variance is less than 1.2e-4 across 10+ real frames, it's a rigid spoof
+                  const isSpoofDetected = !hasSimulatedInHistory &&
+                    landmarksHistoryRef.current.length >= 10 && avgVariance < 0.00012;
+
+                  if (hasSimulatedInHistory) {
+                    console.log('[VerifyScreen] Simulated landmarks in history — skipping variance spoof check.');
+                  }
+
                   // Extract High-Res Photo & Generate Embedding via TFJS
                   let currentEmbedding = latestEmbeddingRef.current;
                   if (!currentEmbedding) {
@@ -126,7 +205,17 @@ export default function VerifyScreen({ navigation }) {
                     return;
                   }
 
-                  const result = await NHAIFaceSDK.verifyEmbedding(currentEmbedding, currentLandmarks, 'Device_ID_Demo');
+                  if (currentLandmarks) {
+                    currentLandmarks.isSpoof = isSpoofDetected || simulateSpoof;
+                  }
+
+                  const result = await NHAIFaceSDK.verifyEmbedding(
+                    currentEmbedding, 
+                    currentLandmarks, 
+                    'Device_ID_Demo',
+                    false,
+                    currentBbox
+                  );
                   if (!isMountedRef.current) return;
                   
                   let targetColor = '#dc3545';
@@ -186,6 +275,7 @@ export default function VerifyScreen({ navigation }) {
                         setMatchData({
                           message: 'No face matched in offline database.'
                         });
+                        setMatchStatus('UNKNOWN');
                       }
                 } catch (err) {
                   console.error('[VerifyScreen] Verification error:', err);
@@ -264,6 +354,17 @@ export default function VerifyScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
+      {/* Developer Demo Spoof Toggle */}
+      <View style={styles.simulatorHeader}>
+        <Text style={styles.simulatorLabel}>Developer Demo: Force Spoof Attack (Simulate Photo)</Text>
+        <Switch
+          value={simulateSpoof}
+          onValueChange={setSimulateSpoof}
+          trackColor={{ false: '#767577', true: '#dc3545' }}
+          thumbColor={simulateSpoof ? '#fff' : '#f4f3f4'}
+        />
+      </View>
+
       <View style={[styles.cameraWrapper, { borderColor, borderWidth: matchStatus !== 'SEARCHING' && matchStatus !== 'IDLE' ? 6 : 0 }]}>
         <CameraView 
           ref={cameraViewRef} 
@@ -671,5 +772,20 @@ const styles = StyleSheet.create({
     color: '#495057',
     fontSize: 15,
     fontWeight: '600',
+  },
+  simulatorHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderColor: '#333'
+  },
+  simulatorLabel: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500'
   }
 });

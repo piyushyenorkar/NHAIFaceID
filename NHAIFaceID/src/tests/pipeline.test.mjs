@@ -67,7 +67,7 @@ const fusionLive = fuseLiveness(textureScoreLive, reflectionScoreLive, depthScor
 assert(textureScoreLive >= 0.85, `Live Texture score is high (${textureScoreLive.toFixed(4)})`);
 assert(reflectionScoreLive >= 0.85, `Live Corneal reflection score is high (${reflectionScoreLive.toFixed(4)})`);
 assert(depthScoreLive >= 0.90, `Live 3D depth score is high (${depthScoreLive.toFixed(4)})`);
-assert(fusionLive.passed === true, `Fused liveness passed (${fusionLive.score.toFixed(4)} >= 0.75)`);
+assert(fusionLive.passed === true, `Fused liveness passed (${fusionLive.score.toFixed(4)} >= 0.72)`);
 console.log(`  - Fused Score: ${fusionLive.score.toFixed(4)}\n`);
 
 
@@ -87,7 +87,7 @@ const fusionSpoof = fuseLiveness(textureScoreSpoof, reflectionScoreSpoof, depthS
 assert(textureScoreSpoof < 0.60, `Spoof Texture score is low (${textureScoreSpoof.toFixed(4)})`);
 assert(reflectionScoreSpoof < 0.60, `Spoof Corneal reflection score is low (${reflectionScoreSpoof.toFixed(4)})`);
 assert(depthScoreSpoof < 0.40, `Spoof Depth score is extremely low due to flat 2D projection (${depthScoreSpoof.toFixed(4)})`);
-assert(fusionSpoof.passed === false, `Fused liveness blocked spoof successfully (${fusionSpoof.score.toFixed(4)} < 0.75)`);
+assert(fusionSpoof.passed === false, `Fused liveness blocked spoof successfully (${fusionSpoof.score.toFixed(4)} < 0.72)`);
 console.log(`  - Fused Score: ${fusionSpoof.score.toFixed(4)}\n`);
 
 
