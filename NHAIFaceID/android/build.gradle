@@ -31,3 +31,12 @@ allprojects {
         mavenCentral()
     }
 }
+
+subprojects {
+    plugins.withId("com.android.application") {
+        android.ndkVersion = rootProject.ext.ndkVersion
+    }
+    plugins.withId("com.android.library") {
+        android.ndkVersion = rootProject.ext.ndkVersion
+    }
+}

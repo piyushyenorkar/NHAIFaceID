@@ -33,6 +33,7 @@ export function getFaceMesh468(box, contours = null) {
   console.log('[CameraView] getFaceMesh468 hasRealContours:', hasRealContours, 'keys:', contours ? Object.keys(contours).join(', ') : 'null');
 
   if (hasRealContours) {
+    landmarks.isSimulated = false; // Real MLKit contour data — variance-based spoof detection is valid
     // 1. Face Silhouette/Outline: 36 points.
     const realFace = contours.FACE;
     for (let i = 0; i < 36; i++) {
@@ -179,6 +180,7 @@ export function getFaceMesh468(box, contours = null) {
     }
 
   } else {
+    landmarks.isSimulated = true; // Mathematical fallback mesh — variance will be zero, skip spoof detection
     // 1. Face Silhouette/Outline: 36 points
     for (let i = 0; i < 36; i++) {
       const angle = (i / 36) * 2 * Math.PI;

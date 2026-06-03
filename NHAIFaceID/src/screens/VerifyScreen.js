@@ -77,6 +77,8 @@ export default function VerifyScreen({ navigation }) {
             x: (pt.x - bbox.x) / bbox.w,
             y: (pt.y - bbox.y) / bbox.h
           }));
+          // Propagate the isSimulated flag so variance check knows if this frame is real data
+          relativeLandmarks.isSimulated = landmarks.isSimulated === true;
           landmarksHistoryRef.current.push(relativeLandmarks);
           if (landmarksHistoryRef.current.length > 20) {
             landmarksHistoryRef.current.shift();
@@ -172,8 +174,17 @@ export default function VerifyScreen({ navigation }) {
                   const avgVariance = calculateLandmarksVariance(landmarksHistoryRef.current);
                   console.log('[VerifyScreen] Landmark variance:', avgVariance);
 
-                  // If average variance is less than 6e-4, it's a rigid spoof (static print or monitor screen)
-                  const isSpoofDetected = landmarksHistoryRef.current.length >= 5 && avgVariance < 0.0006;
+                  // Skip variance spoof check if any frame used the simulated mathematical mesh
+                  // (its relative-landmark positions are constant by design, giving a false zero-variance)
+                  const hasSimulatedInHistory = landmarksHistoryRef.current.some(f => f.isSimulated === true);
+
+                  // If average variance is less than 1.2e-4 across 10+ real frames, it's a rigid spoof
+                  const isSpoofDetected = !hasSimulatedInHistory &&
+                    landmarksHistoryRef.current.length >= 10 && avgVariance < 0.00012;
+
+                  if (hasSimulatedInHistory) {
+                    console.log('[VerifyScreen] Simulated landmarks in history — skipping variance spoof check.');
+                  }
 
                   // Extract High-Res Photo & Generate Embedding via TFJS
                   let currentEmbedding = latestEmbeddingRef.current;
@@ -201,7 +212,9 @@ export default function VerifyScreen({ navigation }) {
                   const result = await NHAIFaceSDK.verifyEmbedding(
                     currentEmbedding, 
                     currentLandmarks, 
-                    'Device_ID_Demo'
+                    'Device_ID_Demo',
+                    false,
+                    currentBbox
                   );
                   if (!isMountedRef.current) return;
                   

@@ -95,6 +95,8 @@ export default function EnrollScreen({ navigation }) {
             x: (pt.x - bbox.x) / bbox.w,
             y: (pt.y - bbox.y) / bbox.h
           }));
+          // Propagate the isSimulated flag so variance check knows if this frame is real data
+          relativeLandmarks.isSimulated = landmarks.isSimulated === true;
           landmarksHistoryRef.current.push(relativeLandmarks);
           if (landmarksHistoryRef.current.length > 20) {
             landmarksHistoryRef.current.shift();
@@ -123,12 +125,19 @@ export default function EnrollScreen({ navigation }) {
         }
 
         // Real-time passive spoof liveness check using landmark variance
+        // Skip if any frame in the history used the simulated mathematical mesh
+        // (its relative-landmark positions are constant by design, giving a false zero-variance)
         let isSpoofDetected = false;
-        if (landmarksHistoryRef.current.length >= 5) {
-          const avgVariance = calculateLandmarksVariance(landmarksHistoryRef.current);
-          console.log('[EnrollScreen] avgVariance:', avgVariance);
-          if (avgVariance < 0.0006) {
-            isSpoofDetected = true;
+        if (landmarksHistoryRef.current.length >= 10) {
+          const hasSimulatedInHistory = landmarksHistoryRef.current.some(f => f.isSimulated === true);
+          if (!hasSimulatedInHistory) {
+            const avgVariance = calculateLandmarksVariance(landmarksHistoryRef.current);
+            console.log('[EnrollScreen] avgVariance:', avgVariance);
+            if (avgVariance < 0.00012) {
+              isSpoofDetected = true;
+            }
+          } else {
+            console.log('[EnrollScreen] Simulated landmarks in history — skipping variance spoof check.');
           }
         }
 
@@ -268,7 +277,10 @@ export default function EnrollScreen({ navigation }) {
 
                         const avgVariance = calculateLandmarksVariance(landmarksHistoryRef.current);
                         console.log('[EnrollScreen] Landmark variance:', avgVariance);
-                        const isSpoofDetected = landmarksHistoryRef.current.length >= 5 && avgVariance < 0.0006;
+                        const hasSimulatedInHistory = landmarksHistoryRef.current.some(f => f.isSimulated === true);
+                        // Only flag spoof via variance if all frames in history are real MLKit data
+                        const isSpoofDetected = !hasSimulatedInHistory &&
+                          landmarksHistoryRef.current.length >= 10 && avgVariance < 0.00012;
                         
                         let permanentPhotoPath = null;
                         if (cameraViewRef.current) {
@@ -299,7 +311,8 @@ export default function EnrollScreen({ navigation }) {
                           name, 
                           ensemble, 
                           finalLandmarks, 
-                          permanentPhotoPath
+                          permanentPhotoPath,
+                          finalBbox
                         );
                         
                         if (isMountedRef.current) {

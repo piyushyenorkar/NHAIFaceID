@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Animated, Switch } from 'react-native';
 import CameraView from '../components/CameraView';
-import { runPassiveLiveness, calculateLandmarksVariance } from '../services/livenessDetection';
+import { runPassiveLiveness, calculateLandmarksVariance, LIVENESS_THRESHOLD } from '../services/livenessDetection';
 
 export default function LivenessScreen({ navigation }) {
   const [isScanning, setIsScanning] = useState(true);
@@ -31,6 +31,8 @@ export default function LivenessScreen({ navigation }) {
           x: (pt.x - bbox.x) / bbox.w,
           y: (pt.y - bbox.y) / bbox.h
         }));
+        // Propagate the isSimulated flag so variance check knows if this frame is real data
+        relativeLandmarks.isSimulated = landmarks.isSimulated === true;
         landmarksHistoryRef.current.push(relativeLandmarks);
         if (landmarksHistoryRef.current.length > 20) {
           landmarksHistoryRef.current.shift();
@@ -55,9 +57,14 @@ export default function LivenessScreen({ navigation }) {
       
       let isSpoof = simulateSpoof;
       if (currentLandmarks && currentBbox) {
-        const avgVariance = calculateLandmarksVariance(landmarksHistoryRef.current);
-        const isSpoofDetected = landmarksHistoryRef.current.length >= 5 && avgVariance < 0.0006;
-        isSpoof = isSpoof || isSpoofDetected;
+        const hasSimulatedInHistory = landmarksHistoryRef.current.some(f => f.isSimulated === true);
+        if (!hasSimulatedInHistory) {
+          const avgVariance = calculateLandmarksVariance(landmarksHistoryRef.current);
+          const isSpoofDetected = landmarksHistoryRef.current.length >= 10 && avgVariance < 0.00012;
+          isSpoof = isSpoof || isSpoofDetected;
+        } else {
+          console.log('[LivenessScreen] Simulated landmarks in history — skipping variance spoof check.');
+        }
       }
 
       // Create frame and landmarks structure for passive liveness check
@@ -110,7 +117,7 @@ export default function LivenessScreen({ navigation }) {
   const hasFace = latestLandmarksRef.current !== null;
   const statusColor = hasFace ? getStatusColor(livenessData.score * 100) : '#6c757d';
   const statusText = hasFace 
-    ? (livenessData.score < 0.75 ? '⚠️ SPOOF ATTACK SUSPECTED' : '✓ SECURE LIVE FACE')
+    ? (livenessData.score < LIVENESS_THRESHOLD ? '⚠️ SPOOF ATTACK SUSPECTED' : '✓ SECURE LIVE FACE')
     : 'ALIGN FACE INSIDE GUIDES...';
 
   return (
@@ -201,7 +208,7 @@ export default function LivenessScreen({ navigation }) {
           <View style={{ flex: 1 }}>
             <Text style={styles.fusedLabel}>Fused Anti-Spoofing Index</Text>
             <Text style={[styles.fusedStatus, { color: statusColor }]}>
-              {livenessData.score >= 0.75 ? 'PASSED (Target >= 75%)' : 'BLOCKED (Low Score)'}
+              {livenessData.score >= LIVENESS_THRESHOLD ? `PASSED (Target >= ${(LIVENESS_THRESHOLD * 100).toFixed(0)}%)` : 'BLOCKED (Low Score)'}
             </Text>
           </View>
           <Text style={[styles.fusedValue, { color: statusColor }]}>

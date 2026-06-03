@@ -6,6 +6,12 @@
 
 import { runAntiSpoofInference } from './antiSpoofCheck.js';
 
+/**
+ * Single source of truth for the liveness pass/fail threshold.
+ * Used by fuseLiveness(), LivenessScreen, and tests.
+ */
+export const LIVENESS_THRESHOLD = 0.72;
+
 // Helper to calculate Euclidean distance between two points {x, y}
 export function dist(p1, p2) {
   if (!p1 || !p2) return 0;
@@ -240,7 +246,7 @@ export function analyzeDepthCues(landmarks) {
 export function fuseLiveness(textureScore, reflectionScore, depthScore, aiScore = 0.95) {
   // AI model gets 70% weight, LBP texture gets 20%, corneal reflection gets 10%
   const score = (aiScore * 0.70) + (textureScore * 0.20) + (reflectionScore * 0.10);
-  const passed = score >= 0.72; // Threshold is 0.72 per specs
+  const passed = score >= LIVENESS_THRESHOLD; // Uses shared LIVENESS_THRESHOLD constant
   
   return {
     passed,
