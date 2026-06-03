@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { StyleSheet, Text, View, Dimensions, TouchableOpacity } from 'react-native';
+import { Camera, useCameraDevice, useCameraFormat, useFrameProcessor, runAsync } from 'react-native-vision-camera';
+import Svg, { Line, Circle, Text as SvgText, Defs, Mask, Rect, Ellipse } from 'react-native-svg';
+import { useFaceDetector } from 'react-native-vision-camera-face-detector';
 import { Camera, useCameraDevice, useCameraFormat, useFrameProcessor, runAsync, VisionCameraProxy } from 'react-native-vision-camera';
 import Svg, { Line, Circle, Text as SvgText } from 'react-native-svg';
 import { useRunOnJS } from 'react-native-worklets-core';
@@ -312,6 +315,7 @@ export function getFaceMesh468(box, contours = null) {
 const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace = null }, ref) => {
   const camera = useRef(null);
   const [cameraPosition, setCameraPosition] = useState('front');
+  const [localFace, setLocalFace] = useState(null);
   const device = useCameraDevice(cameraPosition);
 
   const format = useCameraFormat(device, [
@@ -323,6 +327,19 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
   const [layoutDims, setLayoutDims] = useState({ w: width, h: height });
   // Internal face tracking state — so CameraView renders its own detection overlay
   const [internalFace, setInternalFace] = useState(null);
+
+  const faceDetectorOptions = React.useMemo(() => ({
+    performanceMode: 'fast',
+    contourMode: 'all',
+    landmarkMode: 'all',
+    classificationMode: 'all',
+    autoMode: true,
+    windowWidth: width,
+    windowHeight: height,
+    cameraFacing: cameraPosition
+  }), [cameraPosition]);
+
+  const { detectFaces } = useFaceDetector(faceDetectorOptions);
 
   const exposureValue = device?.supportsExposureBias 
     ? Math.min(1.2, device.maxExposureBias ?? 1.2) 
@@ -512,7 +529,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         }
       }
     });
-  }, [isActive]);
+  }, [isActive, detectFaces]);
 
   const toggleCamera = () => {
     setCameraPosition(prev => prev === 'front' ? 'back' : 'front');
@@ -528,15 +545,17 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
   let activeColor = '#00FF00';
   let activeKeypoints = [];
 
-  if (activeFace && activeFace.bbox) {
+  const displayFace = detectedFace || localFace;
+
+  if (displayFace && displayFace.bbox) {
     activeBox = {
-      x: activeFace.bbox.x * layoutDims.w,
-      y: activeFace.bbox.y * layoutDims.h,
-      w: activeFace.bbox.w * layoutDims.w,
-      h: activeFace.bbox.h * layoutDims.h
+      x: displayFace.bbox.x * layoutDims.w,
+      y: displayFace.bbox.y * layoutDims.h,
+      w: displayFace.bbox.w * layoutDims.w,
+      h: displayFace.bbox.h * layoutDims.h
     };
-    activeColor = activeFace.color || '#00FF00';
-    activeKeypoints = (activeFace.landmarks || []).map(kp => ({
+    activeColor = displayFace.color || '#00FF00';
+    activeKeypoints = (displayFace.landmarks || []).map(kp => ({
       x: kp.x * layoutDims.w,
       y: kp.y * layoutDims.h,
       name: kp.name || ''
@@ -560,6 +579,32 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         exposure={exposureValue}
       />
       
+      {/* Center Oval Guide Overlay */}
+      {isActive && (
+        <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
+          <Ellipse
+            cx={layoutDims.w / 2}
+            cy={layoutDims.h * 0.42}
+            rx={layoutDims.w * 0.32}
+            ry={layoutDims.h * 0.26}
+            stroke={displayFace ? '#10B981' : '#F5C40A'}
+            strokeWidth="3.5"
+            strokeDasharray="12, 6"
+            fill="none"
+          />
+
+          <Ellipse
+            cx={layoutDims.w / 2}
+            cy={layoutDims.h * 0.42}
+            rx={layoutDims.w * 0.30}
+            ry={layoutDims.h * 0.24}
+            stroke="rgba(245, 196, 10, 0.4)"
+            strokeWidth="1.5"
+            fill="none"
+          />
+        </Svg>
+      )}
+
       {activeBox && (
         <View style={[
           styles.boundingBox, 
@@ -607,6 +652,16 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         </Svg>
       )}
 
+      <TouchableOpacity style={styles.switchButton} onPress={toggleCamera}>
+        <Text style={styles.switchIcon}>🔄</Text>
+        <Text style={styles.switchText}>{cameraPosition === 'front' ? 'Front' : 'Back'}</Text>
+      </TouchableOpacity>
+
+      <View style={styles.textOverlay}>
+        <Text style={[styles.guidanceText, { color: activeColor === 'gray' ? 'white' : activeColor }]}>
+          {displayFace ? 'Biometric Alignment complete' : 'Align face inside guides...'}
+        </Text>
+      </View>
     </View>
   );
 });

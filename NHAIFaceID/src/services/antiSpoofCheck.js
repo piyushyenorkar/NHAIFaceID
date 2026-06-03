@@ -35,8 +35,8 @@ async function initNativeImports() {
     InferenceSession = ort.InferenceSession;
     Tensor = ort.Tensor;
     
-    const fs = require('react-native-fs');
-    RNFS = fs.default || fs;
+    let rnfsMod = require('react-native-fs');
+    RNFS = (rnfsMod && rnfsMod.default && typeof rnfsMod.default.readFile === 'function') ? rnfsMod.default : rnfsMod;
     
     const rn = require('react-native');
     Image = rn.Image;
@@ -138,6 +138,10 @@ export async function runAntiSpoofInference(imageTensor, bbox) {
   }
 
   // 1. Preprocess the image crop using TFJS (crop, resize, normalize, transpose to CHW)
+  if (!imageTensor) {
+    return 0.95;
+  }
+
   const chwData = tf.tidy(() => {
     const y1 = bbox.y;
     const x1 = bbox.x;

@@ -52,6 +52,19 @@ export default function UserListScreen() {
       embeddingArray = JSON.parse(item.embedding);
     } catch (e) {}
 
+    // Support both multi-pose ensembles (2D arrays) and single embeddings (1D arrays)
+    let displayArray = [];
+    if (Array.isArray(embeddingArray) && Array.isArray(embeddingArray[0])) {
+      displayArray = embeddingArray[0]; // Use the CENTER pose embedding
+    } else if (Array.isArray(embeddingArray)) {
+      displayArray = embeddingArray;
+    }
+
+    const formattedHash = displayArray.slice(0, 8).map(v => {
+      const num = typeof v === 'number' ? v : parseFloat(v);
+      return !isNaN(num) ? num.toFixed(3) : '0.000';
+    }).join(', ');
+
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>

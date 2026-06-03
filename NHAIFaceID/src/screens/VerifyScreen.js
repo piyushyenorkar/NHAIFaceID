@@ -102,6 +102,56 @@ export default function VerifyScreen({ navigation }) {
                   setMatchData(result);
                   setMatchStatus(result.status === 'MATCH' || result.status === 'LOW_CONFIDENCE' ? result.status : (result.status === 'REJECTED_SPOOF' ? 'SPOOF_REJECTED' : 'UNKNOWN'));
 
+                  if (result.status === 'REJECTED_SPOOF') {
+                    setMatchData({
+                      message: result.message,
+                      livenessScore: result.livenessScore,
+                      details: result.livenessDetails,
+                      time_ms: result.processingTimeMs
+                    });
+                    setMatchStatus('SPOOF_REJECTED');
+                  } else if (result.status === 'MATCH') {
+                    setMatchData({
+                      employee: result.employee,
+                      confidence: result.confidence,
+                      livenessScore: result.livenessScore,
+                      time_ms: result.processingTimeMs,
+                      breakdown: result.breakdownMs
+                    });
+                    setMatchStatus('MATCHED');
+                    
+                    Animated.timing(confidenceAnim, {
+                      toValue: parseFloat(result.confidence),
+                      duration: 800,
+                      useNativeDriver: false
+                    }).start();
+                  } else if (result.status === 'LOW_CONFIDENCE') {
+                    setMatchData({
+                      employee: result.employee,
+                      confidence: result.confidence,
+                      livenessScore: result.livenessScore,
+                      time_ms: result.processingTimeMs,
+                      breakdown: result.breakdownMs
+                    });
+                    setMatchStatus('LOW_CONFIDENCE');
+                    
+                    Animated.timing(confidenceAnim, {
+                      toValue: parseFloat(result.confidence),
+                      duration: 800,
+                      useNativeDriver: false
+                    }).start();
+                      } else if (result.status === 'NO_FACE') {
+                        setMatchData({
+                          message: 'No face detected in captured frame. Please verify that the camera lens is clear.'
+                        });
+                        setMatchStatus('UNKNOWN');
+                      } else {
+                        // NO_MATCH - briefly show unknown then auto retry
+                        setMatchData({
+                          message: 'No face matched in offline database.'
+                        });
+                        setMatchStatus('UNKNOWN');
+                      }
                   if (result.status === 'MATCH' || result.status === 'LOW_CONFIDENCE') {
                     Animated.timing(confidenceAnim, { toValue: parseFloat(result.confidence || 0), duration: 800, useNativeDriver: false }).start();
                   }

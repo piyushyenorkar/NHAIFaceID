@@ -89,7 +89,10 @@ export async function alignAndCropFace(image, bbox, landmarks = null) {
 
   if (image && image.path) {
     try {
-      const RNFS = require('react-native-fs');
+      let RNFS = require('react-native-fs');
+      if (RNFS && RNFS.default && typeof RNFS.default.readFile === 'function') {
+        RNFS = RNFS.default;
+      }
       // Strip 'file://' prefix for RNFS.readFile on Android
       const cleanPath = image.path.startsWith('file://')
         ? image.path.slice(7)
