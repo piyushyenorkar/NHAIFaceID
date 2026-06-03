@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, Switch } from 'react-native';
 import Svg, { Ellipse, Rect, Polyline } from 'react-native-svg';
 import RNFS from 'react-native-fs';
 import CameraView from '../components/CameraView';
@@ -48,6 +48,34 @@ export default function EnrollScreen({ navigation }) {
   });
   const isProcessingStageRef = useRef(false);
 
+  const [bypassPoseCheck, setBypassPoseCheckState] = useState(false);
+  const bypassPoseCheckRef = useRef(false);
+  const toggleBypassPoseCheck = (val) => {
+    bypassPoseCheckRef.current = val;
+    setBypassPoseCheckState(val);
+  };
+
+  const forceCaptureStage = () => {
+    if (enrollStatus !== 'SCANNING') return;
+    if (!latestLandmarksRef.current || !latestBboxRef.current) {
+      Alert.alert('No Face Detected', 'Please align a face in the camera view before capturing.');
+      return;
+    }
+    
+    // Clear quality warning/reason to force capture
+    qualityReasonRef.current = null;
+    
+    const currentStage = enrollStageRef.current;
+    let targetProgress = 20;
+    if (currentStage === 'CENTER') targetProgress = 20;
+    else if (currentStage === 'LEFT') targetProgress = 40;
+    else if (currentStage === 'RIGHT') targetProgress = 60;
+    else if (currentStage === 'UP') targetProgress = 80;
+    else if (currentStage === 'DOWN') targetProgress = 100;
+
+    setProgress(targetProgress);
+  };
+
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
@@ -66,6 +94,7 @@ export default function EnrollScreen({ navigation }) {
     }
     setProgress(0);
     setEnrollStage('CENTER');
+    toggleBypassPoseCheck(false); // Reset bypass mode
     collectedEmbeddingsRef.current = { CENTER: null, LEFT: null, RIGHT: null, UP: null, DOWN: null };
     setStatusMessage('Align face inside guide oval...');
     lastDetectedRef.current = 0;
@@ -144,11 +173,15 @@ export default function EnrollScreen({ navigation }) {
         // Active Guided Stage Pose Verification
         const detectedPose = estimatePoseAngle(landmarks);
         let poseMatchesStage = false;
-        if (enrollStageRef.current === 'CENTER' && detectedPose === 'center') poseMatchesStage = true;
-        if (enrollStageRef.current === 'LEFT' && detectedPose === 'left') poseMatchesStage = true;
-        if (enrollStageRef.current === 'RIGHT' && detectedPose === 'right') poseMatchesStage = true;
-        if (enrollStageRef.current === 'UP' && detectedPose === 'up') poseMatchesStage = true;
-        if (enrollStageRef.current === 'DOWN' && detectedPose === 'down') poseMatchesStage = true;
+        if (bypassPoseCheckRef.current) {
+          poseMatchesStage = true;
+        } else {
+          if (enrollStageRef.current === 'CENTER' && detectedPose === 'center') poseMatchesStage = true;
+          if (enrollStageRef.current === 'LEFT' && detectedPose === 'left') poseMatchesStage = true;
+          if (enrollStageRef.current === 'RIGHT' && detectedPose === 'right') poseMatchesStage = true;
+          if (enrollStageRef.current === 'UP' && detectedPose === 'up') poseMatchesStage = true;
+          if (enrollStageRef.current === 'DOWN' && detectedPose === 'down') poseMatchesStage = true;
+        }
 
         if (isSpoofDetected) {
           qualityReasonRef.current = 'spoof';
@@ -415,6 +448,27 @@ export default function EnrollScreen({ navigation }) {
         )}
       </View>
 
+      {/* Developer Options for scanning */}
+      {enrollStatus === 'SCANNING' && (
+        <View style={styles.simulatorHeader}>
+          <View style={{ flex: 0.5, flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={styles.simulatorLabelDev}>Bypass Pose</Text>
+            <Switch
+              value={bypassPoseCheck}
+              onValueChange={toggleBypassPoseCheck}
+              trackColor={{ false: '#767577', true: '#28a745' }}
+              thumbColor={bypassPoseCheck ? '#fff' : '#f4f3f4'}
+            />
+          </View>
+          <TouchableOpacity 
+            style={styles.forceCaptureBtn} 
+            onPress={forceCaptureStage}
+          >
+            <Text style={styles.forceCaptureBtnText}>Force Capture {enrollStage}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Camera Area */}
       <View style={styles.cameraWrapper}>
         <CameraView 
@@ -646,5 +700,35 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontStyle: 'italic',
     textAlign: 'center',
+  },
+  simulatorHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderColor: '#333'
+  },
+  simulatorLabelDev: {
+    fontSize: 14,
+    color: '#fff',
+    fontWeight: '500',
+    marginRight: 10,
+  },
+  forceCaptureBtn: {
+    backgroundColor: '#003087',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FFD700',
+    alignItems: 'center',
+  },
+  forceCaptureBtnText: {
+    color: '#FFD700',
+    fontSize: 14,
+    fontWeight: 'bold',
   }
 });

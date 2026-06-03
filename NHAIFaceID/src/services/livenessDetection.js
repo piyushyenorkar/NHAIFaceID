@@ -298,6 +298,18 @@ export async function runPassiveLiveness(frame, landmarks, bbox = null) {
  * @returns {object} { pass: boolean, ratio: number, reason: string|null }
  */
 export function checkPoseAngle(landmarks) {
+  if (landmarks && typeof landmarks.yawAngle === 'number' && typeof landmarks.pitchAngle === 'number') {
+    const yaw = landmarks.yawAngle;
+    const pitch = landmarks.pitchAngle;
+    // Accept up to 15 degrees yaw and 12 degrees pitch for verification
+    const pass = Math.abs(yaw) <= 15 && Math.abs(pitch) <= 12;
+    return {
+      pass,
+      ratio: Math.max(Math.abs(yaw)/15, Math.abs(pitch)/12),
+      reason: !pass ? 'bad_angle' : null
+    };
+  }
+
   if (!landmarks || landmarks.length < 468) return { pass: true, ratio: 1.0, reason: null };
   
   const noseBridge = landmarks[257];
@@ -332,6 +344,25 @@ export function checkPoseAngle(landmarks) {
  * @returns {string} Pose name
  */
 export function estimatePoseAngle(landmarks) {
+  if (landmarks && typeof landmarks.yawAngle === 'number' && typeof landmarks.pitchAngle === 'number') {
+    const yaw = landmarks.yawAngle;
+    const pitch = landmarks.pitchAngle;
+    
+    // Classify based on MLKit Euler angles in degrees
+    if (yaw < -13) {
+      return 'left';
+    } else if (yaw > 13) {
+      return 'right';
+    } else if (pitch > 10) {
+      return 'up';
+    } else if (pitch < -10) {
+      return 'down';
+    } else if (Math.abs(yaw) <= 10 && Math.abs(pitch) <= 8) {
+      return 'center';
+    }
+    return 'unknown';
+  }
+
   if (!landmarks || landmarks.length < 468) return 'unknown';
   
   const noseBridge = landmarks[168] || landmarks[257];
