@@ -3,7 +3,16 @@ import { StyleSheet, Text, View, Dimensions, TouchableOpacity } from 'react-nati
 import { Camera, useCameraDevice, useCameraFormat, useFrameProcessor, runAsync } from 'react-native-vision-camera';
 import Svg, { Line, Circle, Text as SvgText, Defs, Mask, Rect, Ellipse } from 'react-native-svg';
 import { useFaceDetector } from 'react-native-vision-camera-face-detector';
+import { Camera, useCameraDevice, useCameraFormat, useFrameProcessor, runAsync, VisionCameraProxy } from 'react-native-vision-camera';
+import Svg, { Line, Circle, Text as SvgText } from 'react-native-svg';
 import { useRunOnJS } from 'react-native-worklets-core';
+
+const faceDetectorPlugin = VisionCameraProxy.initFrameProcessorPlugin('detectFaces', {
+  performanceMode: 'fast',
+  contourMode: 'all',
+  landmarkMode: 'all',
+  classificationMode: 'all',
+});
 
 const { width, height } = Dimensions.get('window');
 
@@ -30,7 +39,11 @@ export function getFaceMesh468(box, contours = null) {
                           contours.NOSE_BRIDGE && contours.NOSE_BRIDGE.length > 0 &&
                           contours.NOSE_BOTTOM && contours.NOSE_BOTTOM.length > 0;
 
-  console.log('[CameraView] getFaceMesh468 hasRealContours:', hasRealContours, 'keys:', contours ? Object.keys(contours).join(', ') : 'null');
+  // Log only once every ~2 seconds to avoid spam
+  if (!getFaceMesh468._logCounter) getFaceMesh468._logCounter = 0;
+  if (getFaceMesh468._logCounter++ % 60 === 0) {
+    console.log('[CameraView] getFaceMesh468 hasRealContours:', hasRealContours, 'keys:', contours ? Object.keys(contours).join(', ') : 'null');
+  }
 
   if (hasRealContours) {
     landmarks.isSimulated = false; // Real MLKit contour data — variance-based spoof detection is valid
@@ -312,6 +325,8 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
 
   const [hasPermission, setHasPermission] = useState(false);
   const [layoutDims, setLayoutDims] = useState({ w: width, h: height });
+  // Internal face tracking state — so CameraView renders its own detection overlay
+  const [internalFace, setInternalFace] = useState(null);
 
   const faceDetectorOptions = React.useMemo(() => ({
     performanceMode: 'fast',
@@ -347,6 +362,9 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         return photo.path;
       }
       return null;
+    },
+    toggleCamera() {
+      setCameraPosition(prev => prev === 'front' ? 'back' : 'front');
     }
   }));
 
@@ -358,28 +376,40 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
   }, []);
 
   const frameCount = useRef(0);
+  const lastUIUpdateRef = useRef(0);
 
-  const handleFaceResult = (box, contours, euler = null) => {
+  const handleFaceResult = (box, contours, faceMetrics = null) => {
+    // Calculate the 468 simulated landmarks safely on the JS thread!
     const simulatedLandmarks = getFaceMesh468(box, contours);
-    if (simulatedLandmarks && euler) {
-      simulatedLandmarks.yawAngle = euler.yawAngle;
-      simulatedLandmarks.pitchAngle = euler.pitchAngle;
-      simulatedLandmarks.rollAngle = euler.rollAngle;
+    if (simulatedLandmarks && faceMetrics) {
+      simulatedLandmarks.yawAngle = faceMetrics.yawAngle;
+      simulatedLandmarks.pitchAngle = faceMetrics.pitchAngle;
+      simulatedLandmarks.rollAngle = faceMetrics.rollAngle;
+      simulatedLandmarks.leftEyeOpen = faceMetrics.leftEyeOpen;
+      simulatedLandmarks.rightEyeOpen = faceMetrics.rightEyeOpen;
+      simulatedLandmarks.smiling = faceMetrics.smiling;
+      simulatedLandmarks.boxWidth = box.w;
+      simulatedLandmarks.boxHeight = box.h;
+      simulatedLandmarks.boxAspect = box.h > 0 ? box.w / box.h : 1;
     }
-
-    setLocalFace({
-      bbox: box,
-      landmarks: simulatedLandmarks,
-      color: '#00FF00'
-    });
-
+    // Throttle UI re-renders to ~6fps (every 5th frame) to avoid performance death
+    const now = Date.now();
+    if (now - lastUIUpdateRef.current > 150) {
+      lastUIUpdateRef.current = now;
+      setInternalFace({ bbox: box, landmarks: simulatedLandmarks, color: '#00FF00' });
+    }
+    // Always notify parent callback at full speed for enrollment logic
     if (onFaceDetectedRef.current) {
       onFaceDetectedRef.current(box, simulatedLandmarks, null);
     }
   };
 
   const handleNoFace = () => {
-    setLocalFace(null);
+    // Only clear after a debounce to avoid flicker on momentary detection gaps
+    const now = Date.now();
+    if (now - lastUIUpdateRef.current > 500) {
+      setInternalFace(null);
+    }
     if (onFaceDetectedRef.current) {
       onFaceDetectedRef.current(null, null, null);
     }
@@ -387,6 +417,10 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
 
   const runHandleFaceResult = useRunOnJS(handleFaceResult, [handleFaceResult]);
   const runHandleNoFace = useRunOnJS(handleNoFace, [handleNoFace]);
+
+  // Diagnostic logger callable from worklet
+  const handleDiag = (msg) => { console.log(msg); };
+  const runHandleDiag = useRunOnJS(handleDiag, []);
 
   const frameProcessor = useFrameProcessor((frame) => {
     'worklet';
@@ -397,28 +431,68 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
     runAsync(frame, () => {
       'worklet';
       // Run MLKit face detection via frame processor plugin
-      const result = detectFaces(frame);
-      const faces = Array.isArray(result) ? result : (result && result.faces ? result.faces : []);
+      const result = faceDetectorPlugin.call(frame);
+
+      // DIAGNOSTIC: dump raw result structure (throttled)
+      if (frameCount.current % 60 === 1) {
+        const resultType = typeof result;
+        const isArr = Array.isArray(result);
+        const resultKeys = result && typeof result === 'object' ? Object.keys(result) : [];
+        runHandleDiag(`[DIAG] result type=${resultType} isArray=${isArr} keys=[${resultKeys.join(',')}]`);
+      }
+
+      // The native plugin returns faces as a JSON string, not a parsed array!
+      let faces = [];
+      if (Array.isArray(result)) {
+        faces = result;
+      } else if (result && result.faces) {
+        if (typeof result.faces === 'string') {
+          try {
+            faces = JSON.parse(result.faces);
+          } catch (e) {
+            faces = [];
+          }
+        } else if (Array.isArray(result.faces)) {
+          faces = result.faces;
+        }
+      }
 
       if (faces.length > 0) {
         const face = faces[0];
-        const bounds = face.bounds || face.boundingBox || face;
 
+        // DIAGNOSTIC: dump face object keys and values (throttled)
+        if (frameCount.current % 60 === 2) {
+          const faceKeys = Object.keys(face);
+          const sample = {};
+          for (const k of faceKeys) {
+            const v = face[k];
+            if (typeof v === 'number') sample[k] = v;
+            else if (typeof v === 'object' && v !== null) sample[k] = `[object keys: ${Object.keys(v).join(',')}]`;
+            else sample[k] = String(v);
+          }
+          runHandleDiag(`[DIAG] face keys=[${faceKeys.join(',')}] values=${JSON.stringify(sample)}`);
+        }
+
+        const bounds = face.bounds || face.boundingBox || face;
+        // Normalize by FRAME dimensions (camera resolution), not screen dimensions
+        const fw = frame.width || width;
+        const fh = frame.height || height;
         const normalizedBox = {
-          x: (bounds.x ?? bounds.left ?? 0) / width,
-          y: (bounds.y ?? bounds.top ?? 0) / height,
-          w: (bounds.width ?? bounds.w ?? 0) / width,
-          h: (bounds.height ?? bounds.h ?? 0) / height,
+          x: (bounds.x ?? bounds.left ?? 0) / fw,
+          y: (bounds.y ?? bounds.top ?? 0) / fh,
+          w: (bounds.width ?? bounds.w ?? 0) / fw,
+          h: (bounds.height ?? bounds.h ?? 0) / fh,
         };
 
         // Extract unique biometric signals that differ per person
+        // Try multiple possible property names from different MLKit versions
         const faceMetrics = {
-          yawAngle: typeof face.yawAngle === 'number' ? face.yawAngle : 0,
-          pitchAngle: typeof face.pitchAngle === 'number' ? face.pitchAngle : 0,
-          rollAngle: typeof face.rollAngle === 'number' ? face.rollAngle : 0,
-          leftEyeOpen: typeof face.leftEyeOpenProbability === 'number' ? face.leftEyeOpenProbability : 0.5,
-          rightEyeOpen: typeof face.rightEyeOpenProbability === 'number' ? face.rightEyeOpenProbability : 0.5,
-          smiling: typeof face.smilingProbability === 'number' ? face.smilingProbability : 0.5,
+          yawAngle: face.yawAngle ?? face.headEulerAngleY ?? face.rotationY ?? 0,
+          pitchAngle: face.pitchAngle ?? face.headEulerAngleX ?? face.rotationX ?? 0,
+          rollAngle: face.rollAngle ?? face.headEulerAngleZ ?? face.rotationZ ?? 0,
+          leftEyeOpen: face.leftEyeOpenProbability ?? 0.5,
+          rightEyeOpen: face.rightEyeOpenProbability ?? 0.5,
+          smiling: face.smilingProbability ?? 0.5,
         };
 
         // Try to extract contours - handle different formats from different library versions
@@ -438,8 +512,8 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
               const normPoints = [];
               for (let j = 0; j < points.length; j++) {
                 normPoints.push({
-                  x: points[j].x / width,
-                  y: points[j].y / height
+                  x: points[j].x / fw,
+                  y: points[j].y / fh
                 });
               }
               normalizedContours[key] = normPoints;
@@ -465,6 +539,8 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
   if (device == null) return <Text style={styles.errorText}>No camera found for {cameraPosition} view.</Text>;
 
   const isFront = cameraPosition === 'front';
+  // Use detectedFace prop if provided (e.g. success state), otherwise use internal live tracking
+  const activeFace = detectedFace || internalFace;
   let activeBox = null;
   let activeColor = '#00FF00';
   let activeKeypoints = [];
@@ -556,7 +632,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         />
       ))}
 
-      {displayFace && activeKeypoints.length >= 4 && (
+      {activeFace && activeKeypoints.length >= 4 && (
         <Svg style={StyleSheet.absoluteFill}>
           <Line x1={activeKeypoints[0].x} y1={activeKeypoints[0].y} x2={activeKeypoints[1].x} y2={activeKeypoints[1].y} stroke="#00E5FF" strokeWidth="2" strokeDasharray="4,4" />
           <Line x1={activeKeypoints[0].x} y1={activeKeypoints[0].y} x2={activeKeypoints[2].x} y2={activeKeypoints[2].y} stroke="#00E5FF" strokeWidth="1.5" />

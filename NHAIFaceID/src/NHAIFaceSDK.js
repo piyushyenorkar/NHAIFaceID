@@ -57,13 +57,42 @@ class NHAIFaceSDK {
       throw new Error(`Enrollment rejected: Liveness check failed (Score: ${(livenessResult.score * 100).toFixed(1)}%). Spoof enrollments are prohibited.`);
     }
 
+    // Average the multi-pose ensemble into a single 128-D embedding
+    let finalEmbedding;
+    if (Array.isArray(embedding[0])) {
+      // Ensemble of multiple pose embeddings — average them
+      const validEmbeddings = embedding.filter(e => e && Array.isArray(e) && e.length === 128);
+      if (validEmbeddings.length === 0) {
+        throw new Error('No valid embeddings captured during enrollment.');
+      }
+      finalEmbedding = new Array(128).fill(0);
+      for (const emb of validEmbeddings) {
+        for (let i = 0; i < 128; i++) {
+          finalEmbedding[i] += (typeof emb[i] === 'number' ? emb[i] : 0);
+        }
+      }
+      for (let i = 0; i < 128; i++) {
+        finalEmbedding[i] /= validEmbeddings.length;
+      }
+      // L2-normalize the averaged embedding
+      const norm = Math.sqrt(finalEmbedding.reduce((s, v) => s + v * v, 0));
+      if (norm > 0) {
+        finalEmbedding = finalEmbedding.map(v => v / norm);
+      }
+      console.log(`[NHAIFaceSDK] Averaged ${validEmbeddings.length} pose embeddings. First5: [${finalEmbedding.slice(0, 5).map(v => v.toFixed(4)).join(', ')}]`);
+    } else {
+      finalEmbedding = embedding;
+    }
+
     // Check if the face already exists in the system to prevent duplicate enrollments
-    // Even a LOW_CONFIDENCE match (>0.50) means this face is likely already registered
-    const centerEmbedding = Array.isArray(embedding[0]) ? embedding[0] : embedding;
-    const dupCheck = await this.verifyEmbedding(centerEmbedding, landmarks, 'enrollment_check', true);
+    const dupCheck = await this.verifyEmbedding(finalEmbedding, landmarks, 'enrollment_check', true);
     if (dupCheck.status === 'MATCH' || dupCheck.status === 'LOW_CONFIDENCE' || dupCheck.confidence > 0.45) {
       throw new Error(`Face is already enrolled under Employee ID: ${dupCheck.employeeId || 'Unknown'} (${dupCheck.name || 'Unknown'}). New unique face required.`);
     }
+
+    // Log the final embedding being saved
+    const nonZeroCount = finalEmbedding.filter(v => Math.abs(v) > 0.001).length;
+    console.log(`[NHAIFaceSDK] Saving embedding: ${nonZeroCount}/128 non-zero dims. First8: [${finalEmbedding.slice(0, 8).map(v => (typeof v === 'number' ? v : 0).toFixed(4)).join(', ')}]`);
 
     // Extract mathematical face registration profile
     const depthVariance = calculateDepthVariance(landmarks);
@@ -71,7 +100,7 @@ class NHAIFaceSDK {
 
     // Save to local SQLite database with registration metrics
     try {
-      await insertEnrolledFace(employeeId, name, embedding, depthVariance, faceRatios, photoPath);
+      await insertEnrolledFace(employeeId, name, finalEmbedding, depthVariance, faceRatios, photoPath);
     } catch (dbError) {
       console.error('[NHAIFaceSDK] SQLite Insert failed:', dbError);
       if (dbError && dbError.message && dbError.message.includes('UNIQUE constraint failed')) {

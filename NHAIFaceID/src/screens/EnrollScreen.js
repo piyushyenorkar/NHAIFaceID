@@ -1,20 +1,18 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, Switch } from 'react-native';
-import Svg, { Ellipse, Rect, Polyline } from 'react-native-svg';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, SafeAreaView, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import Svg, { Ellipse, Rect, Polyline, Path } from 'react-native-svg';
 import RNFS from 'react-native-fs';
 import CameraView from '../components/CameraView';
 import NHAIFaceSDK from '../NHAIFaceSDK';
-import { decodeJpeg } from '@tensorflow/tfjs-react-native/dist/decode_image';
 
 import { Buffer } from 'buffer';
 import { alignAndCropFace, generateEmbedding } from '../services/faceRecognition';
-import { calculateLandmarksVariance, checkPoseAngle, estimatePoseAngle } from '../services/livenessDetection';
-
-function base64ToUint8Array(base64) {
-  return new Uint8Array(Buffer.from(base64, 'base64'));
-}
 
 export default function EnrollScreen({ navigation }) {
+  useLayoutEffect(() => {
+    navigation.setOptions({ headerShown: false });
+  }, [navigation]);
+
   const [employeeId, setEmployeeId] = useState('');
   const [name, setName] = useState('');
   const [enrollStatus, setEnrollStatus] = useState('IDLE'); // IDLE, SCANNING, PROCESSING, SUCCESS
@@ -23,59 +21,12 @@ export default function EnrollScreen({ navigation }) {
 
   // Scanning progress states
   const [progress, setProgress] = useState(0);
-  const [statusMessage, setStatusMessage] = useState('Looking for face...');
+  const [statusMessage, setStatusMessage] = useState('SCANNING');
   
   const cameraViewRef = useRef(null);
   const lastDetectedRef = useRef(0);
   const progressIntervalRef = useRef(null);
   const isMountedRef = useRef(true);
-  const landmarksHistoryRef = useRef([]);
-  const boxHistoryRef = useRef([]);
-  const qualityReasonRef = useRef(null);
-
-  // Multi-pose guided enrollment states
-  const [enrollStage, setEnrollStageState] = useState('CENTER'); // CENTER, LEFT, RIGHT, UP, DOWN
-  const enrollStageRef = useRef('CENTER');
-  const setEnrollStage = (stage) => {
-    enrollStageRef.current = stage;
-    setEnrollStageState(stage);
-  };
-  const collectedEmbeddingsRef = useRef({
-    CENTER: null,
-    LEFT: null,
-    RIGHT: null,
-    UP: null,
-    DOWN: null
-  });
-  const isProcessingStageRef = useRef(false);
-
-  const [bypassPoseCheck, setBypassPoseCheckState] = useState(false);
-  const bypassPoseCheckRef = useRef(false);
-  const toggleBypassPoseCheck = (val) => {
-    bypassPoseCheckRef.current = val;
-    setBypassPoseCheckState(val);
-  };
-
-  const forceCaptureStage = () => {
-    if (enrollStatus !== 'SCANNING') return;
-    if (!latestLandmarksRef.current || !latestBboxRef.current) {
-      Alert.alert('No Face Detected', 'Please align a face in the camera view before capturing.');
-      return;
-    }
-    
-    // Clear quality warning/reason to force capture
-    qualityReasonRef.current = null;
-    
-    const currentStage = enrollStageRef.current;
-    let targetProgress = 20;
-    if (currentStage === 'CENTER') targetProgress = 20;
-    else if (currentStage === 'LEFT') targetProgress = 40;
-    else if (currentStage === 'RIGHT') targetProgress = 60;
-    else if (currentStage === 'UP') targetProgress = 80;
-    else if (currentStage === 'DOWN') targetProgress = 100;
-
-    setProgress(targetProgress);
-  };
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -94,110 +45,29 @@ export default function EnrollScreen({ navigation }) {
       return;
     }
     setProgress(0);
-    setEnrollStage('CENTER');
-    toggleBypassPoseCheck(false); // Reset bypass mode
-    collectedEmbeddingsRef.current = { CENTER: null, LEFT: null, RIGHT: null, UP: null, DOWN: null };
-    setStatusMessage('Align face inside guide oval...');
+    setStatusMessage('SCANNING');
     lastDetectedRef.current = 0;
     setDetectedFace(null);
     setEnrollStatus('SCANNING');
   };
 
-  // Called 30 times a second from CameraView
   const handleFaceDetected = (bbox, landmarks, embedding) => {
     if (enrollStatus !== 'SCANNING') return;
     
     if (bbox && landmarks) {
       const isCentered = true; 
-
       if (isCentered) {
         lastDetectedRef.current = Date.now();
         latestLandmarksRef.current = landmarks;
         latestBboxRef.current = bbox;
-        
         if (embedding) {
           latestEmbeddingRef.current = embedding;
-        }
-
-        // Push relative landmarks to history
-        if (bbox.w > 0 && bbox.h > 0) {
-          const relativeLandmarks = landmarks.map(pt => ({
-            x: (pt.x - bbox.x) / bbox.w,
-            y: (pt.y - bbox.y) / bbox.h
-          }));
-          // Propagate the isSimulated flag so variance check knows if this frame is real data
-          relativeLandmarks.isSimulated = landmarks.isSimulated === true;
-          landmarksHistoryRef.current.push(relativeLandmarks);
-          if (landmarksHistoryRef.current.length > 20) {
-            landmarksHistoryRef.current.shift();
-          }
-        }
-
-        // Bounding Box motion stability check
-        boxHistoryRef.current.push({ x: bbox.x, y: bbox.y, w: bbox.w, h: bbox.h });
-        if (boxHistoryRef.current.length > 5) {
-          boxHistoryRef.current.shift();
-        }
-
-        let isMovingTooFast = false;
-        if (boxHistoryRef.current.length >= 3) {
-          let totalDiff = 0;
-          const history = boxHistoryRef.current;
-          for (let i = 1; i < history.length; i++) {
-            const prevCenter = { x: history[i-1].x + history[i-1].w/2, y: history[i-1].y + history[i-1].h/2 };
-            const currCenter = { x: history[i].x + history[i].w/2, y: history[i].y + history[i].h/2 };
-            totalDiff += Math.sqrt(Math.pow(currCenter.x - prevCenter.x, 2) + Math.pow(currCenter.y - prevCenter.y, 2));
-          }
-          const avgDiff = totalDiff / (history.length - 1);
-          if (avgDiff >= 0.035) {
-            isMovingTooFast = true;
-          }
-        }
-
-        // Real-time passive spoof liveness check using landmark variance
-        // Skip if any frame in the history used the simulated mathematical mesh
-        // (its relative-landmark positions are constant by design, giving a false zero-variance)
-        let isSpoofDetected = false;
-        if (landmarksHistoryRef.current.length >= 10) {
-          const hasSimulatedInHistory = landmarksHistoryRef.current.some(f => f.isSimulated === true);
-          if (!hasSimulatedInHistory) {
-            const avgVariance = calculateLandmarksVariance(landmarksHistoryRef.current);
-            console.log('[EnrollScreen] avgVariance:', avgVariance);
-            if (avgVariance < 0.00012) {
-              isSpoofDetected = true;
-            }
-          } else {
-            console.log('[EnrollScreen] Simulated landmarks in history — skipping variance spoof check.');
-          }
-        }
-
-        // Active Guided Stage Pose Verification
-        const detectedPose = estimatePoseAngle(landmarks);
-        let poseMatchesStage = false;
-        if (bypassPoseCheckRef.current) {
-          poseMatchesStage = true;
-        } else {
-          if (enrollStageRef.current === 'CENTER' && detectedPose === 'center') poseMatchesStage = true;
-          if (enrollStageRef.current === 'LEFT' && detectedPose === 'left') poseMatchesStage = true;
-          if (enrollStageRef.current === 'RIGHT' && detectedPose === 'right') poseMatchesStage = true;
-          if (enrollStageRef.current === 'UP' && detectedPose === 'up') poseMatchesStage = true;
-          if (enrollStageRef.current === 'DOWN' && detectedPose === 'down') poseMatchesStage = true;
-        }
-
-        if (isSpoofDetected) {
-          qualityReasonRef.current = 'spoof';
-        } else if (isMovingTooFast) {
-          qualityReasonRef.current = 'blurry';
-        } else if (!poseMatchesStage) {
-          qualityReasonRef.current = 'bad_angle';
-        } else {
-          qualityReasonRef.current = null;
         }
       }
     }
   };
 
-  // Progress scanning loop
+  // Progress scanning loop (2 seconds total)
   useEffect(() => {
     if (enrollStatus !== 'SCANNING') {
       if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
@@ -205,194 +75,92 @@ export default function EnrollScreen({ navigation }) {
     }
 
     lastDetectedRef.current = 0;
-    landmarksHistoryRef.current = []; // Clear history at start of scan
-    boxHistoryRef.current = [];
-    qualityReasonRef.current = null;
-    isProcessingStageRef.current = false;
-
     progressIntervalRef.current = setInterval(async () => {
-      if (isProcessingStageRef.current) return;
-
       const faceDetected = Date.now() - lastDetectedRef.current < 800;
 
       if (faceDetected) {
         setProgress(prev => {
-          let baseline = 0;
-          let target = 20;
-          const currentStage = enrollStageRef.current;
-          if (currentStage === 'CENTER') { baseline = 0; target = 20; }
-          else if (currentStage === 'LEFT') { baseline = 20; target = 40; }
-          else if (currentStage === 'RIGHT') { baseline = 40; target = 60; }
-          else if (currentStage === 'UP') { baseline = 60; target = 80; }
-          else if (currentStage === 'DOWN') { baseline = 80; target = 100; }
-
-          if (qualityReasonRef.current) {
-            if (qualityReasonRef.current === 'spoof') {
-              setStatusMessage('⚠️ SPOOF DETECTED — Use live face');
-            } else if (qualityReasonRef.current === 'blurry') {
-              setStatusMessage('📷 Hold still — camera adjusting');
-            } else {
-              if (currentStage === 'CENTER') setStatusMessage('👁 Look straight at camera');
-              else if (currentStage === 'LEFT') setStatusMessage('👁 Turn your head slowly left');
-              else if (currentStage === 'RIGHT') setStatusMessage('👁 Turn your head slowly right');
-              else if (currentStage === 'UP') setStatusMessage('👁 Tilt your head slightly up');
-              else if (currentStage === 'DOWN') setStatusMessage('👁 Tilt your head slightly down');
-            }
-            return Math.max(baseline, prev - 2); // decay progress slowly to baseline of active stage
-          }
-
-          const nextProgress = prev + 2; // Takes 1 second to lock each 20% stage segment
+          const nextProgress = prev + 5;
           
-          if (currentStage === 'CENTER') {
-            setStatusMessage(`Aligning center pose: ${Math.round((nextProgress - baseline) / 20 * 100)}%`);
-          } else if (currentStage === 'LEFT') {
-            setStatusMessage(`Registering left yaw profile: ${Math.round((nextProgress - baseline) / 20 * 100)}%`);
-          } else if (currentStage === 'RIGHT') {
-            setStatusMessage(`Registering right yaw profile: ${Math.round((nextProgress - baseline) / 20 * 100)}%`);
-          } else if (currentStage === 'UP') {
-            setStatusMessage(`Registering upper pitch profile: ${Math.round((nextProgress - baseline) / 20 * 100)}%`);
-          } else if (currentStage === 'DOWN') {
-            setStatusMessage(`Registering lower pitch profile: ${Math.round((nextProgress - baseline) / 20 * 100)}%`);
-          }
-
-          if (nextProgress >= target) {
-            isProcessingStageRef.current = true;
-            setStatusMessage(`Processing ${currentStage.toLowerCase()} profile...`);
-
-            // Execute async capture
-            (async () => {
-              try {
-                const currentLandmarks = latestLandmarksRef.current;
-                const currentBbox = latestBboxRef.current;
-
-                if (!currentLandmarks || !currentBbox) {
-                  isProcessingStageRef.current = false;
-                  return;
-                }
-
-                let embedding = null;
-                if (cameraViewRef.current) {
-                  const photoPath = await cameraViewRef.current.capturePhoto();
-                  if (photoPath) {
-                    const cropped = await alignAndCropFace({ path: photoPath }, currentBbox, currentLandmarks);
-                    embedding = await generateEmbedding(cropped);
-                  }
-                }
-
-                if (!embedding) {
-                  isProcessingStageRef.current = false;
-                  return;
-                }
-
-                collectedEmbeddingsRef.current[currentStage] = embedding;
-
-                if (currentStage === 'CENTER') {
-                  setEnrollStage('LEFT');
-                  setProgress(20);
-                } else if (currentStage === 'LEFT') {
-                  setEnrollStage('RIGHT');
-                  setProgress(40);
-                } else if (currentStage === 'RIGHT') {
-                  setEnrollStage('UP');
-                  setProgress(60);
-                } else if (currentStage === 'UP') {
-                  setEnrollStage('DOWN');
-                  setProgress(80);
-                } else if (currentStage === 'DOWN') {
-                  setProgress(100);
-                  clearInterval(progressIntervalRef.current);
-                  if (isMountedRef.current) setEnrollStatus('PROCESSING');
+          if (nextProgress < 35) {
+            setStatusMessage(`SCANNING`);
+          } else if (nextProgress < 70) {
+            setStatusMessage(`ANALYZING`);
+          } else if (nextProgress < 100) {
+            setStatusMessage(`EXTRACTING`);
+          } else if (nextProgress >= 100) {
+            clearInterval(progressIntervalRef.current);
+            if (isMountedRef.current) setEnrollStatus('PROCESSING');
+            
+            // Defer execution by 100ms to allow React to paint the PROCESSING state
+            setTimeout(() => {
+              (async () => {
+                try {
+                  const currentLandmarks = latestLandmarksRef.current;
+                  const currentBbox = latestBboxRef.current;
                   
-                  setTimeout(() => {
-                    (async () => {
-                      try {
-                        const finalLandmarks = latestLandmarksRef.current;
-                        const finalBbox = latestBboxRef.current;
+                  // Always capture a high-res photo for the user profile list
+                  let permanentPhotoPath = null;
+                  if (cameraViewRef.current) {
+                    const tempPath = await cameraViewRef.current.capturePhoto();
+                    if (tempPath) {
+                      const fileName = `enrolled_${employeeId}_${Date.now()}.jpg`;
+                      permanentPhotoPath = `${RNFS.DocumentDirectoryPath}/${fileName}`;
+                      const sourcePath = tempPath.replace('file://', '');
+                      await RNFS.copyFile(sourcePath, permanentPhotoPath);
+                      permanentPhotoPath = `file://${permanentPhotoPath}`;
+                    }
+                  }
 
-                        const avgVariance = calculateLandmarksVariance(landmarksHistoryRef.current);
-                        console.log('[EnrollScreen] Landmark variance:', avgVariance);
-                        const hasSimulatedInHistory = landmarksHistoryRef.current.some(f => f.isSimulated === true);
-                        // Only flag spoof via variance if all frames in history are real MLKit data
-                        const isSpoofDetected = !hasSimulatedInHistory &&
-                          landmarksHistoryRef.current.length >= 10 && avgVariance < 0.00012;
-                        
-                        let permanentPhotoPath = null;
-                        if (cameraViewRef.current) {
-                          const tempPath = await cameraViewRef.current.capturePhoto();
-                          if (tempPath) {
-                            const fileName = `enrolled_${employeeId}_${Date.now()}.jpg`;
-                            permanentPhotoPath = `${RNFS.DocumentDirectoryPath}/${fileName}`;
-                            const sourcePath = tempPath.replace('file://', '');
-                            await RNFS.copyFile(sourcePath, permanentPhotoPath);
-                            permanentPhotoPath = `file://${permanentPhotoPath}`;
-                          }
-                        }
+                  let currentEmbedding = latestEmbeddingRef.current;
+                  if (!currentEmbedding && permanentPhotoPath) {
+                    const cropped = await alignAndCropFace({ path: permanentPhotoPath }, currentBbox, currentLandmarks);
+                    currentEmbedding = await generateEmbedding(cropped);
+                  }
 
-                        const ensemble = [
-                          collectedEmbeddingsRef.current.CENTER,
-                          collectedEmbeddingsRef.current.LEFT,
-                          collectedEmbeddingsRef.current.RIGHT,
-                          collectedEmbeddingsRef.current.UP,
-                          collectedEmbeddingsRef.current.DOWN
-                        ];
+                  if (!currentEmbedding) {
+                    Alert.alert('Error', 'Could not extract valid 3D facial embedding. Please try again in better lighting.');
+                    setEnrollStatus('IDLE');
+                    return;
+                  }
 
-                        if (finalLandmarks) {
-                          finalLandmarks.isSpoof = isSpoofDetected;
-                        }
-
-                        const result = await NHAIFaceSDK.enrollEmbedding(
-                          employeeId, 
-                          name, 
-                          ensemble, 
-                          finalLandmarks, 
-                          permanentPhotoPath,
-                          finalBbox
-                        );
-                        
-                        if (isMountedRef.current) {
-                          setDetectedFace({
-                            bbox: finalBbox,
-                            landmarks: finalLandmarks,
-                            color: '#28a745'
-                          });
-                          
-                          setEnrollStatus('SUCCESS');
-                          Alert.alert('Success', `Employee ${name} (${employeeId}) has been successfully enrolled offline.`);
-                          setTimeout(() => {
-                            if (isMountedRef.current) {
-                              if (navigation.canGoBack()) {
-                                navigation.goBack();
-                              } else {
-                                navigation.navigate('Home');
-                              }
-                            }
-                          }, 2500);
-                        }
-                      } catch (error) {
-                        console.error('[EnrollScreen]', error);
-                        if (isMountedRef.current) {
-                          setEnrollStatus('IDLE');
-                          Alert.alert('Enrollment Failed', error.message || 'Face enrollment failed due to spoofing or poor lighting.');
+                  const result = await NHAIFaceSDK.enrollEmbedding(employeeId, name, currentEmbedding, currentLandmarks, permanentPhotoPath);
+                  
+                  if (isMountedRef.current) {
+                    setDetectedFace({
+                      bbox: currentBbox,
+                      landmarks: currentLandmarks,
+                      color: '#10B981'
+                    });
+                    
+                    setEnrollStatus('SUCCESS');
+                    Alert.alert('Success', `Employee ${name} (${employeeId}) has been successfully enrolled offline.`);
+                    setTimeout(() => {
+                      if (isMountedRef.current) {
+                        if (navigation.canGoBack()) {
+                          navigation.goBack();
+                        } else {
+                          navigation.navigate('Home');
                         }
                       }
-                    })();
-                  }, 100);
+                    }, 2500);
+                  }
+                } catch (error) {
+                  console.error('[EnrollScreen]', error);
+                  if (isMountedRef.current) {
+                    setEnrollStatus('IDLE');
+                    Alert.alert('Enrollment Failed', error.message || 'Face enrollment failed due to spoofing or poor lighting.');
+                  }
                 }
-                
-                isProcessingStageRef.current = false;
-              } catch (err) {
-                console.error('[EnrollScreen] Stage capture error:', err);
-                isProcessingStageRef.current = false;
-              }
-            })();
-
-            return prev;
+              })();
+            }, 100);
+            return 100;
           }
           return nextProgress;
         });
       } else {
         setProgress(0);
-        setStatusMessage('Align face inside guide oval...');
+        setStatusMessage('SCANNING');
       }
     }, 100);
 
@@ -426,8 +194,6 @@ export default function EnrollScreen({ navigation }) {
       </View>
     );
   }
-
-  const isCapturing = enrollStatus === 'SCANNING';
 
   return (
     <View style={styles.container}>
@@ -496,12 +262,6 @@ export default function EnrollScreen({ navigation }) {
               thumbColor={bypassPoseCheck ? '#FFFFFF' : '#94A3B8'}
             />
           </View>
-          <TouchableOpacity 
-            style={styles.forceCaptureBtn} 
-            onPress={forceCaptureStage}
-          >
-            <Text style={styles.forceCaptureBtnText}>Force Capture {enrollStage}</Text>
-          </TouchableOpacity>
         </View>
       )}
 
@@ -584,6 +344,10 @@ export default function EnrollScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#0A1F44',
+  },
   container: {
     flex: 1,
     backgroundColor: '#0A0F1D', // Premium Slate Dark background
@@ -705,7 +469,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: 'bold',
   },
-  progressOverlay: {
+  cameraTopRow: {
     position: 'absolute',
     bottom: 40,
     alignSelf: 'center',
@@ -731,8 +495,16 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  progressBarTrack: {
-    width: '100%',
+  liveBtn: {
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  liveDot: {
+    width: 6,
     height: 6,
     backgroundColor: 'rgba(255,255,255,0.08)',
     borderRadius: 3,
@@ -774,9 +546,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontStyle: 'italic',
   },
-  successContainer: {
-    flex: 1,
-    alignItems: 'center',
+  guideFrameContainer: {
+    position: 'absolute',
+    top: 60,
+    bottom: 60,
+    left: 40,
+    right: 40,
     justifyContent: 'center',
     backgroundColor: '#0A0F1D',
     padding: 24,
@@ -895,10 +670,45 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginBottom: 10,
   },
-  processingSubtext: {
-    color: '#F5C40A',
+  statusSubtext: {
+    color: '#FFD700',
     fontSize: 11,
     fontStyle: 'italic',
     textAlign: 'center',
+  },
+  successContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 26,
+    backgroundColor: '#f8f9fa',
+  },
+  successTitle: {
+    fontSize: 28,
+    color: '#28a745',
+    fontWeight: 'bold',
+    marginBottom: 24,
+  },
+  successText: {
+    fontSize: 18,
+    color: '#333',
+    marginBottom: 8,
+  },
+  timestamp: {
+    fontSize: 14,
+    color: '#6c757d',
+    marginTop: 16,
+    marginBottom: 32,
+  },
+  doneBtn: {
+    backgroundColor: '#003087',
+    paddingHorizontal: 40,
+    paddingVertical: 18,
+    borderRadius: 8,
+  },
+  doneBtnText: {
+    color: '#FFD700',
+    fontSize: 18,
+    fontWeight: 'bold',
   }
 });
