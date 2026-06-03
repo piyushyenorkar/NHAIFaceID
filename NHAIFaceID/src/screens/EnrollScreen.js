@@ -282,7 +282,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   formContainer: {
-    padding: 16,
+    padding: 18,
     backgroundColor: '#f8f9fa',
     borderBottomWidth: 1,
     borderBottomColor: '#dee2e6',
@@ -292,14 +292,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#ced4da',
     borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
     marginBottom: 12,
     fontSize: 16,
   },
   simulatorCard: {
     backgroundColor: '#fff',
-    padding: 12,
+    padding: 14,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#ced4da',
@@ -319,7 +319,7 @@ const styles = StyleSheet.create({
   startBtn: {
     backgroundColor: '#003087',
     borderRadius: 8,
-    paddingVertical: 16,
+    paddingVertical: 18,
     alignItems: 'center',
   },
   startBtnText: {
@@ -336,8 +336,8 @@ const styles = StyleSheet.create({
     top: 20,
     alignSelf: 'center',
     backgroundColor: 'rgba(0,0,0,0.85)',
-    paddingVertical: 14,
-    paddingHorizontal: 24,
+    paddingVertical: 16,
+    paddingHorizontal: 26,
     borderRadius: 20,
     alignItems: 'center',
     width: '90%'
@@ -371,7 +371,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
+    padding: 26,
     backgroundColor: '#f8f9fa',
   },
   successTitle: {
@@ -394,7 +394,7 @@ const styles = StyleSheet.create({
   doneBtn: {
     backgroundColor: '#003087',
     paddingHorizontal: 40,
-    paddingVertical: 16,
+    paddingVertical: 18,
     borderRadius: 8,
   },
   doneBtnText: {
@@ -407,8 +407,8 @@ const styles = StyleSheet.create({
     top: 20,
     alignSelf: 'center',
     backgroundColor: 'rgba(0, 48, 135, 0.95)', // Premium NHAI Blue
-    paddingVertical: 20,
-    paddingHorizontal: 24,
+    paddingVertical: 22,
+    paddingHorizontal: 26,
     borderRadius: 20,
     alignItems: 'center',
     width: '90%',

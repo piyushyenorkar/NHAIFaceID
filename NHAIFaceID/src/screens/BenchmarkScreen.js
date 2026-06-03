@@ -144,8 +144,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   content: {
-    padding: 16,
-    paddingBottom: 40,
+    padding: 18,
+    paddingBottom: 42,
   },
   title: {
     fontSize: 24,
@@ -161,7 +161,7 @@ const styles = StyleSheet.create({
   },
   runBtn: {
     backgroundColor: '#003087',
-    paddingVertical: 16,
+    paddingVertical: 18,
     borderRadius: 8,
     alignItems: 'center',
     marginBottom: 24,
@@ -176,7 +176,7 @@ const styles = StyleSheet.create({
   },
   resultsContainer: {
     backgroundColor: '#f8f9fa',
-    padding: 16,
+    padding: 18,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e9ecef',
@@ -249,7 +249,7 @@ const styles = StyleSheet.create({
   },
   exportBtn: {
     backgroundColor: '#28a745',
-    paddingVertical: 14,
+    paddingVertical: 16,
     borderRadius: 8,
     alignItems: 'center',
     marginTop: 24,
