@@ -57,21 +57,21 @@ class NHAIFaceSDK {
       throw new Error(`Enrollment rejected: Liveness check failed (Score: ${(livenessResult.score * 100).toFixed(1)}%). Spoof enrollments are prohibited.`);
     }
 
-    // Average the multi-pose ensemble into a single 128-D embedding
+    // Average the multi-pose ensemble into a single 192-D embedding
     let finalEmbedding;
     if (Array.isArray(embedding[0])) {
       // Ensemble of multiple pose embeddings — average them
-      const validEmbeddings = embedding.filter(e => e && Array.isArray(e) && e.length === 128);
+      const validEmbeddings = embedding.filter(e => e && Array.isArray(e) && e.length === 192);
       if (validEmbeddings.length === 0) {
         throw new Error('No valid embeddings captured during enrollment.');
       }
-      finalEmbedding = new Array(128).fill(0);
+      finalEmbedding = new Array(192).fill(0);
       for (const emb of validEmbeddings) {
-        for (let i = 0; i < 128; i++) {
+        for (let i = 0; i < 192; i++) {
           finalEmbedding[i] += (typeof emb[i] === 'number' ? emb[i] : 0);
         }
       }
-      for (let i = 0; i < 128; i++) {
+      for (let i = 0; i < 192; i++) {
         finalEmbedding[i] /= validEmbeddings.length;
       }
       // L2-normalize the averaged embedding
@@ -115,7 +115,7 @@ class NHAIFaceSDK {
 
     // Log the final embedding being saved
     const nonZeroCount = finalEmbedding.filter(v => Math.abs(v) > 0.001).length;
-    console.log(`[NHAIFaceSDK] Saving embedding: ${nonZeroCount}/128 non-zero dims. First8: [${finalEmbedding.slice(0, 8).map(v => (typeof v === 'number' ? v : 0).toFixed(4)).join(', ')}]`);
+    console.log(`[NHAIFaceSDK] Saving embedding: ${nonZeroCount}/192 non-zero dims. First8: [${finalEmbedding.slice(0, 8).map(v => (typeof v === 'number' ? v : 0).toFixed(4)).join(', ')}]`);
 
     // Extract mathematical face registration profile
     const depthVariance = calculateDepthVariance(landmarks);
@@ -132,7 +132,7 @@ class NHAIFaceSDK {
       throw dbError;
     }
     
-    console.log(`[NHAIFaceSDK] Successfully enrolled ${name} with native MobileFaceNet 128-D embedding.`);
+    console.log(`[NHAIFaceSDK] Successfully enrolled ${name} with native MobileFaceNet 192-D embedding.`);
     return {
       success: true,
       landmarks

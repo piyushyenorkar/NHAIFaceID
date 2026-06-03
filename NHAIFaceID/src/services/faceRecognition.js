@@ -101,7 +101,7 @@ export async function generateEmbedding(croppedFace) {
       bbox.h ?? bbox.height ?? 0.5
     );
 
-    if (!embeddingArray || embeddingArray.length !== 128) {
+    if (!embeddingArray || embeddingArray.length !== 192) {
       console.error(`[FaceRecognition] Native module returned invalid embedding (length: ${embeddingArray?.length})`);
       return null;
     }
@@ -111,8 +111,8 @@ export async function generateEmbedding(croppedFace) {
     
     const nonZero = embedding.filter(v => Math.abs(v) > 0.001).length;
     console.log(
-      `[Metrics] MobileFaceNet 128-D embedding (NATIVE TFLite) generated in ${Date.now() - start}ms | ` +
-      `${nonZero}/128 non-zero dims | first5: [${embedding.slice(0, 5).map(v => v.toFixed(4)).join(', ')}]`
+      `[Metrics] MobileFaceNet 192-D embedding (NATIVE TFLite) generated in ${Date.now() - start}ms | ` +
+      `${nonZero}/192 non-zero dims | first5: [${embedding.slice(0, 5).map(v => v.toFixed(4)).join(', ')}]`
     );
 
     return embedding;

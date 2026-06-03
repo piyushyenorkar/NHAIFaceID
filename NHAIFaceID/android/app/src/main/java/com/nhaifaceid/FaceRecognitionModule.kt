@@ -23,7 +23,7 @@ import kotlin.math.sqrt
  * with a rock-solid native implementation using TensorFlow Lite Android SDK.
  *
  * Input:  112x112x3 RGB image (normalized to [-1, 1])
- * Output: 128-D L2-normalized face embedding
+ * Output: 192-D L2-normalized face embedding
  */
 class FaceRecognitionModule(reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext) {
@@ -32,7 +32,7 @@ class FaceRecognitionModule(reactContext: ReactApplicationContext) :
         private const val TAG = "FaceRecognitionModule"
         private const val MODEL_FILE = "MobileFaceNet.tflite"
         private const val INPUT_SIZE = 112
-        private const val EMBEDDING_DIM = 128
+        private const val EMBEDDING_DIM = 192
     }
 
     private var interpreter: Interpreter? = null
@@ -140,7 +140,7 @@ class FaceRecognitionModule(reactContext: ReactApplicationContext) :
             fullBitmap.recycle()
 
             val elapsed = System.currentTimeMillis() - startTime
-            Log.i(TAG, "128-D embedding generated in ${elapsed}ms (first5: [${normalized.take(5).joinToString(", ") { "%.4f".format(it) }}])")
+            Log.i(TAG, "192-D embedding generated in ${elapsed}ms (first5: [${normalized.take(5).joinToString(", ") { "%.4f".format(it) }}])")
 
             promise.resolve(result)
         } catch (e: Exception) {
@@ -202,7 +202,7 @@ class FaceRecognitionModule(reactContext: ReactApplicationContext) :
             fullBitmap.recycle()
 
             val elapsed = System.currentTimeMillis() - startTime
-            Log.i(TAG, "128-D embedding from file in ${elapsed}ms (first5: [${normalized.take(5).joinToString(", ") { "%.4f".format(it) }}])")
+            Log.i(TAG, "192-D embedding from file in ${elapsed}ms (first5: [${normalized.take(5).joinToString(", ") { "%.4f".format(it) }}])")
 
             promise.resolve(result)
         } catch (e: Exception) {
