@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, Switch } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, Switch, Animated, Easing, ActivityIndicator } from 'react-native';
 import Svg, { Ellipse, Rect, Polyline } from 'react-native-svg';
 import RNFS from 'react-native-fs';
 import CameraView from '../components/CameraView';
@@ -77,6 +77,46 @@ export default function EnrollScreen({ navigation }) {
       isMountedRef.current = false;
     };
   }, []);
+
+  // Animated spinner for processing
+  const spinAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (enrollStatus === 'PROCESSING') {
+      Animated.loop(
+        Animated.timing(spinAnim, { toValue: 1, duration: 1200, easing: Easing.linear, useNativeDriver: true })
+      ).start();
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.08, duration: 600, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+        ])
+      ).start();
+    } else {
+      spinAnim.setValue(0);
+      pulseAnim.setValue(1);
+    }
+  }, [enrollStatus]);
+
+  const spinInterpolate = spinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
+  // Success screen animations
+  const successScale = useRef(new Animated.Value(0)).current;
+  const successOpacity = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (enrollStatus === 'SUCCESS') {
+      Animated.parallel([
+        Animated.spring(successScale, { toValue: 1, friction: 5, tension: 80, useNativeDriver: true }),
+        Animated.timing(successOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
+      ]).start();
+    } else {
+      successScale.setValue(0);
+      successOpacity.setValue(0);
+    }
+  }, [enrollStatus]);
 
   const latestEmbeddingRef = useRef(null);
   const latestLandmarksRef = useRef(null);
@@ -307,7 +347,7 @@ export default function EnrollScreen({ navigation }) {
 
                 let embedding = null;
                 
-                // REAL face recognition: capture photo → native TFLite → 128-D embedding
+                // REAL face recognition: capture photo → native TFLite → 192-D embedding
                 // NO FALLBACK — if photo fails, we retry, not fake it
                 try {
                   if (cameraViewRef.current) {
@@ -449,20 +489,42 @@ export default function EnrollScreen({ navigation }) {
     };
   }, [enrollStatus, employeeId, name, navigation]);
 
+  // ─── POSE STAGE ICONS ──────────────────────────────────────
+  const STAGES = ['CENTER', 'LEFT', 'RIGHT', 'UP', 'DOWN'];
+  const STAGE_ICONS = { CENTER: '🎯', LEFT: '←', RIGHT: '→', UP: '↑', DOWN: '↓' };
+  const STAGE_LABELS = { CENTER: 'Center', LEFT: 'Left', RIGHT: 'Right', UP: 'Up', DOWN: 'Down' };
+
+  // ─── SUCCESS SCREEN ────────────────────────────────────────
   if (enrollStatus === 'SUCCESS') {
     return (
       <View style={styles.successContainer}>
-        <Text style={styles.successTitle}>✅ Enrollment Successful</Text>
-        <Text style={styles.successText}>Name: {name}</Text>
-        <Text style={styles.successText}>Employee ID: {employeeId}</Text>
-        <Text style={styles.timestamp}>Enrolled on: {new Date().toLocaleString()}</Text>
-
-        <TouchableOpacity
-          style={styles.doneBtn}
-          onPress={() => navigation.navigate('Home')}
-        >
-          <Text style={styles.doneBtnText}>Return Home</Text>
-        </TouchableOpacity>
+        <View style={styles.successHeader}>
+          <Text style={styles.successHeaderTitle}>NHAI</Text>
+          <Text style={styles.successHeaderSub}>ENROLLMENT COMPLETE</Text>
+        </View>
+        <Animated.View style={[styles.successCard, { opacity: successOpacity, transform: [{ scale: successScale }] }]}>
+          <View style={styles.successCheckCircle}>
+            <Text style={styles.successCheckMark}>✓</Text>
+          </View>
+          <Text style={styles.successTitle}>Enrollment Successful</Text>
+          <View style={styles.successInfoRow}>
+            <Text style={styles.successLabel}>Name</Text>
+            <Text style={styles.successValue}>{name}</Text>
+          </View>
+          <View style={styles.successDivider} />
+          <View style={styles.successInfoRow}>
+            <Text style={styles.successLabel}>Employee ID</Text>
+            <Text style={styles.successValue}>{employeeId}</Text>
+          </View>
+          <View style={styles.successDivider} />
+          <View style={styles.successInfoRow}>
+            <Text style={styles.successLabel}>Enrolled On</Text>
+            <Text style={styles.successValueSmall}>{new Date().toLocaleString()}</Text>
+          </View>
+          <TouchableOpacity style={styles.doneBtn} onPress={() => navigation.navigate('Home')}>
+            <Text style={styles.doneBtnText}>Return to Dashboard</Text>
+          </TouchableOpacity>
+        </Animated.View>
       </View>
     );
   }
@@ -471,54 +533,70 @@ export default function EnrollScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      {/* Top Input Form */}
+      {/* ─── HEADER ─────────────────────────────────────── */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Text style={styles.backArrow}>‹</Text>
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>Enroll Personnel</Text>
+          <Text style={styles.headerSub}>NHAI DATALAKE 3.0</Text>
+        </View>
+      </View>
+
+      {/* ─── INPUT FORM ──────────────────────────────── */}
       <View style={styles.formContainer}>
-        <TextInput
-          style={[styles.input, { color: '#000' }]}
-          placeholder="Employee ID"
-          placeholderTextColor="#666"
-          value={employeeId}
-          onChangeText={setEmployeeId}
-          editable={enrollStatus === 'IDLE'}
-        />
-        <TextInput
-          style={[styles.input, { color: '#000' }]}
-          placeholder="Full Name"
-          placeholderTextColor="#666"
-          value={name}
-          onChangeText={setName}
-          editable={enrollStatus === 'IDLE'}
-        />
+        <View style={styles.inputRow}>
+          <View style={styles.inputWrapper}>
+            <Text style={styles.inputLabel}>EMPLOYEE ID</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. NHAI-0042"
+              placeholderTextColor="rgba(0,0,0,0.3)"
+              value={employeeId}
+              onChangeText={setEmployeeId}
+              editable={enrollStatus === 'IDLE'}
+            />
+          </View>
+          <View style={[styles.inputWrapper, { marginLeft: 12 }]}>
+            <Text style={styles.inputLabel}>FULL NAME</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. Ravi Kumar"
+              placeholderTextColor="rgba(0,0,0,0.3)"
+              value={name}
+              onChangeText={setName}
+              editable={enrollStatus === 'IDLE'}
+            />
+          </View>
+        </View>
 
         {enrollStatus === 'IDLE' && (
-          <TouchableOpacity style={styles.startBtn} onPress={startEnrollment}>
-            <Text style={styles.startBtnText}>Start Enrollment</Text>
+          <TouchableOpacity style={styles.startBtn} onPress={startEnrollment} activeOpacity={0.85}>
+            <Text style={styles.startBtnText}>Start Face Enrollment</Text>
           </TouchableOpacity>
         )}
       </View>
 
-      {/* Developer Options for scanning */}
+      {/* ─── DEV OPTIONS (scanning) ──────────────────── */}
       {enrollStatus === 'SCANNING' && (
-        <View style={styles.simulatorHeader}>
-          <View style={{ flex: 0.5, flexDirection: 'row', alignItems: 'center' }}>
-            <Text style={styles.simulatorLabelDev}>Bypass Pose</Text>
+        <View style={styles.devBar}>
+          <View style={styles.devToggle}>
+            <Text style={styles.devLabel}>Bypass Pose</Text>
             <Switch
               value={bypassPoseCheck}
               onValueChange={toggleBypassPoseCheck}
-              trackColor={{ false: '#767577', true: '#28a745' }}
-              thumbColor={bypassPoseCheck ? '#fff' : '#f4f3f4'}
+              trackColor={{ false: 'rgba(255,255,255,0.15)', true: '#10B981' }}
+              thumbColor="#fff"
             />
           </View>
-          <TouchableOpacity 
-            style={styles.forceCaptureBtn} 
-            onPress={forceCaptureStage}
-          >
-            <Text style={styles.forceCaptureBtnText}>Force Capture {enrollStage}</Text>
+          <TouchableOpacity style={styles.forceCaptureBtn} onPress={forceCaptureStage} activeOpacity={0.8}>
+            <Text style={styles.forceCaptureBtnText}>⚡ Force {enrollStage}</Text>
           </TouchableOpacity>
         </View>
       )}
 
-      {/* Camera Area */}
+      {/* ─── CAMERA AREA ─────────────────────────────── */}
       <View style={styles.cameraWrapper}>
         <CameraView 
           ref={cameraViewRef}
@@ -527,37 +605,51 @@ export default function EnrollScreen({ navigation }) {
           detectedFace={detectedFace}
         />
 
-        {/* Progress Overlay */}
+        {/* Scanning Progress Overlay */}
         {enrollStatus === 'SCANNING' && (
           <View style={styles.progressOverlay}>
-            <Text style={styles.progressText}>
-              {statusMessage}
-            </Text>
+            {/* Status Message */}
+            <Text style={styles.progressStatusText}>{statusMessage}</Text>
+            
+            {/* Progress Bar */}
             <View style={styles.progressBarTrack}>
               <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
             </View>
-            
-            {/* Visual 5-Pose Guidance Stepper */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginTop: 12, borderTopWidth: 0.5, borderColor: 'rgba(255,255,255,0.2)', paddingTop: 10 }}>
-              <Text style={{ fontSize: 10, fontWeight: 'bold', color: enrollStage === 'CENTER' ? '#FFD700' : collectedEmbeddingsRef.current.CENTER ? '#28a745' : '#888' }}>
-                {collectedEmbeddingsRef.current.CENTER ? '✓ Center' : '○ Center'}
-              </Text>
-              <Text style={{ fontSize: 10, fontWeight: 'bold', color: enrollStage === 'LEFT' ? '#FFD700' : collectedEmbeddingsRef.current.LEFT ? '#28a745' : '#888' }}>
-                {collectedEmbeddingsRef.current.LEFT ? '✓ Left' : '○ Left'}
-              </Text>
-              <Text style={{ fontSize: 10, fontWeight: 'bold', color: enrollStage === 'RIGHT' ? '#FFD700' : collectedEmbeddingsRef.current.RIGHT ? '#28a745' : '#888' }}>
-                {collectedEmbeddingsRef.current.RIGHT ? '✓ Right' : '○ Right'}
-              </Text>
-              <Text style={{ fontSize: 10, fontWeight: 'bold', color: enrollStage === 'UP' ? '#FFD700' : collectedEmbeddingsRef.current.UP ? '#28a745' : '#888' }}>
-                {collectedEmbeddingsRef.current.UP ? '✓ Up' : '○ Up'}
-              </Text>
-              <Text style={{ fontSize: 10, fontWeight: 'bold', color: enrollStage === 'DOWN' ? '#FFD700' : collectedEmbeddingsRef.current.DOWN ? '#28a745' : '#888' }}>
-                {collectedEmbeddingsRef.current.DOWN ? '✓ Down' : '○ Down'}
-              </Text>
+
+            {/* 5-Pose Stepper */}
+            <View style={styles.poseStepper}>
+              {STAGES.map((stage) => {
+                const isActive = enrollStage === stage;
+                const isDone = !!collectedEmbeddingsRef.current[stage];
+                return (
+                  <View key={stage} style={styles.poseStep}>
+                    <View style={[
+                      styles.poseIcon,
+                      isDone && styles.poseIconDone,
+                      isActive && styles.poseIconActive,
+                    ]}>
+                      <Text style={[
+                        styles.poseIconText,
+                        isDone && { color: '#fff' },
+                        isActive && { color: '#0A1F44' },
+                      ]}>
+                        {isDone ? '✓' : STAGE_ICONS[stage]}
+                      </Text>
+                    </View>
+                    <Text style={[
+                      styles.poseLabel,
+                      isActive && { color: '#F5C40A' },
+                      isDone && { color: '#10B981' },
+                    ]}>
+                      {STAGE_LABELS[stage]}
+                    </Text>
+                  </View>
+                );
+              })}
             </View>
 
-            <Text style={styles.instructionText}>
-              Rotate head slowly through center, left, right, up, down profiles.
+            <Text style={styles.instructionHint}>
+              Rotate head slowly through each profile
             </Text>
           </View>
         )}
@@ -565,22 +657,29 @@ export default function EnrollScreen({ navigation }) {
         {/* Processing Overlay */}
         {enrollStatus === 'PROCESSING' && (
           <View style={styles.processingOverlay}>
-            <Text style={styles.processingTitle}>⚙️ Biometric Audit in Progress</Text>
+            <Animated.View style={[styles.processingSpinnerWrap, { transform: [{ scale: pulseAnim }] }]}>
+              <Animated.View style={{ transform: [{ rotate: spinInterpolate }] }}>
+                <View style={styles.spinnerRing} />
+              </Animated.View>
+              <View style={styles.spinnerCenter}>
+                <Text style={styles.spinnerIcon}>🧬</Text>
+              </View>
+            </Animated.View>
+            <Text style={styles.processingTitle}>Biometric Audit</Text>
             <Text style={styles.processingText}>
-              Analyzing passive liveness cues & extracting offline face template.
+              Analyzing liveness cues & extracting neural face template
             </Text>
-            <Text style={styles.statusSubtext}>
-              {Math.round(progress)}% Complete - Do not move
-            </Text>
+            <View style={styles.processingProgressRow}>
+              <ActivityIndicator size="small" color="#F5C40A" />
+              <Text style={styles.processingSubtext}>{Math.round(progress)}% — Do not move</Text>
+            </View>
 
-            {/* Show live neural network embedding if capturing */}
+            {/* Live embedding readout */}
             {latestEmbeddingRef.current && (
-              <View style={{marginTop: 10, backgroundColor: 'rgba(0,0,0,0.6)', padding: 10, borderRadius: 8}}>
-                <Text style={{color: '#00FF00', fontSize: 10, fontFamily: 'monospace'}}>
-                  LIVE 128-D MobileFaceNet Embedding:
-                </Text>
-                <Text style={{color: '#00FF00', fontSize: 10, fontFamily: 'monospace', marginTop: 4}}>
-                  [{latestEmbeddingRef.current.slice(0, 8).map(v => (typeof v === 'number' ? v : 0).toFixed(4)).join(', ')} ...]
+              <View style={styles.embeddingReadout}>
+                <Text style={styles.embeddingLabel}>LIVE 192-D Embedding:</Text>
+                <Text style={styles.embeddingValue}>
+                  [{latestEmbeddingRef.current.slice(0, 6).map(v => (typeof v === 'number' ? v : 0).toFixed(3)).join(', ')} ...]
                 </Text>
               </View>
             )}
@@ -594,190 +693,404 @@ export default function EnrollScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#0A1F44',
   },
+  // ─── HEADER ────────────────────────────────
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0A1F44',
+    paddingTop: 12,
+    paddingBottom: 10,
+    paddingHorizontal: 16,
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  backArrow: {
+    color: '#F5C40A',
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginTop: -2,
+  },
+  headerTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+  },
+  headerSub: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 11,
+    letterSpacing: 1.5,
+    marginTop: 1,
+  },
+  // ─── FORM ──────────────────────────────────
   formContainer: {
-    padding: 16,
-    backgroundColor: '#f8f9fa',
-    borderBottomWidth: 1,
-    borderBottomColor: '#dee2e6',
+    backgroundColor: '#F0F2F5',
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 14,
+  },
+  inputRow: {
+    flexDirection: 'row',
+  },
+  inputWrapper: {
+    flex: 1,
+  },
+  inputLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#9CA3AF',
+    letterSpacing: 1.2,
+    marginBottom: 4,
   },
   input: {
     backgroundColor: '#fff',
     borderWidth: 1,
-    borderColor: '#ced4da',
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginBottom: 12,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: '#0A1F44',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  startBtn: {
+    backgroundColor: '#0A1F44',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 12,
+    shadowColor: '#0A1F44',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  startBtnText: {
+    color: '#F5C40A',
     fontSize: 16,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
   },
-  simulatorCard: {
-    backgroundColor: '#fff',
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ced4da',
-    marginBottom: 16,
-  },
-  simulatorRow: {
+  // ─── DEV BAR ───────────────────────────────
+  devBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 4,
+    backgroundColor: '#0D2B5E',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
   },
-  simulatorLabel: {
-    fontSize: 13,
-    color: '#333',
-    fontWeight: '500',
-  },
-  startBtn: {
-    backgroundColor: '#003087',
-    borderRadius: 8,
-    paddingVertical: 16,
+  devToggle: {
+    flexDirection: 'row',
     alignItems: 'center',
   },
-  startBtnText: {
-    color: '#FFD700',
-    fontSize: 18,
+  devLabel: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.6)',
+    fontWeight: '600',
+    marginRight: 8,
+  },
+  forceCaptureBtn: {
+    backgroundColor: 'rgba(245,196,10,0.15)',
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(245,196,10,0.4)',
+  },
+  forceCaptureBtnText: {
+    color: '#F5C40A',
+    fontSize: 12,
     fontWeight: 'bold',
   },
+  // ─── CAMERA ────────────────────────────────
   cameraWrapper: {
     flex: 1,
     position: 'relative',
   },
+  // ─── SCANNING OVERLAY ──────────────────────
   progressOverlay: {
     position: 'absolute',
-    top: 20,
-    alignSelf: 'center',
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 20,
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(10, 31, 68, 0.92)',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
     alignItems: 'center',
-    width: '90%'
   },
-  progressText: {
-    color: '#FFD700',
-    fontSize: 15,
+  progressStatusText: {
+    color: '#F5C40A',
+    fontSize: 14,
     fontWeight: 'bold',
     textAlign: 'center',
+    marginBottom: 10,
   },
   progressBarTrack: {
     width: '100%',
-    height: 6,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    height: 5,
+    backgroundColor: 'rgba(255,255,255,0.12)',
     borderRadius: 3,
-    marginTop: 10,
-    marginBottom: 6,
     overflow: 'hidden',
   },
   progressBarFill: {
     height: '100%',
-    backgroundColor: '#FFD700',
+    backgroundColor: '#F5C40A',
+    borderRadius: 3,
   },
-  instructionText: {
-    color: '#FFF',
+  // ─── POSE STEPPER ──────────────────────────
+  poseStepper: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginTop: 14,
+    paddingTop: 10,
+    borderTopWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  poseStep: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  poseIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.15)',
+    marginBottom: 4,
+  },
+  poseIconDone: {
+    backgroundColor: '#10B981',
+    borderColor: '#10B981',
+  },
+  poseIconActive: {
+    backgroundColor: '#F5C40A',
+    borderColor: '#F5C40A',
+    shadowColor: '#F5C40A',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  poseIconText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: 'rgba(255,255,255,0.5)',
+  },
+  poseLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.4)',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  instructionHint: {
+    color: 'rgba(255,255,255,0.4)',
     fontSize: 11,
-    marginTop: 4,
+    marginTop: 8,
     textAlign: 'center',
   },
-  successContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-    backgroundColor: '#f8f9fa',
-  },
-  successTitle: {
-    fontSize: 28,
-    color: '#28a745',
-    fontWeight: 'bold',
-    marginBottom: 24,
-  },
-  successText: {
-    fontSize: 18,
-    color: '#333',
-    marginBottom: 8,
-  },
-  timestamp: {
-    fontSize: 14,
-    color: '#6c757d',
-    marginTop: 16,
-    marginBottom: 32,
-  },
-  doneBtn: {
-    backgroundColor: '#003087',
-    paddingHorizontal: 40,
-    paddingVertical: 16,
-    borderRadius: 8,
-  },
-  doneBtnText: {
-    color: '#FFD700',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
+  // ─── PROCESSING OVERLAY ────────────────────
   processingOverlay: {
     position: 'absolute',
-    top: 20,
-    alignSelf: 'center',
-    backgroundColor: 'rgba(0, 48, 135, 0.95)', // Premium NHAI Blue
-    paddingVertical: 20,
-    paddingHorizontal: 24,
-    borderRadius: 20,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(10, 31, 68, 0.95)',
     alignItems: 'center',
-    width: '90%',
-    borderWidth: 1.5,
-    borderColor: '#FFD700', // Premium NHAI Yellow border
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  processingSpinnerWrap: {
+    width: 80,
+    height: 80,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  spinnerRing: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 3,
+    borderColor: 'rgba(245,196,10,0.15)',
+    borderTopColor: '#F5C40A',
+    borderRightColor: '#F5C40A',
+  },
+  spinnerCenter: {
+    position: 'absolute',
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(245,196,10,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  spinnerIcon: {
+    fontSize: 24,
   },
   processingTitle: {
-    color: '#FFD700',
-    fontSize: 16,
+    color: '#F5C40A',
+    fontSize: 20,
     fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
+    letterSpacing: 0.5,
   },
   processingText: {
-    color: '#FFF',
+    color: 'rgba(255,255,255,0.7)',
     fontSize: 13,
     textAlign: 'center',
     lineHeight: 18,
-    marginBottom: 6,
+    marginBottom: 16,
+  },
+  processingProgressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   processingSubtext: {
-    color: '#FFD700',
-    fontSize: 11,
-    fontStyle: 'italic',
-    textAlign: 'center',
+    color: '#F5C40A',
+    fontSize: 13,
+    fontWeight: '600',
+    marginLeft: 8,
   },
-  simulatorHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#1a1a1a',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
-    borderColor: '#333'
-  },
-  simulatorLabelDev: {
-    fontSize: 14,
-    color: '#fff',
-    fontWeight: '500',
-    marginRight: 10,
-  },
-  forceCaptureBtn: {
-    backgroundColor: '#003087',
+  embeddingReadout: {
+    marginTop: 20,
+    backgroundColor: 'rgba(0,0,0,0.4)',
     paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#FFD700',
-    alignItems: 'center',
+    borderColor: 'rgba(16,185,129,0.3)',
   },
-  forceCaptureBtnText: {
-    color: '#FFD700',
-    fontSize: 14,
+  embeddingLabel: {
+    color: '#10B981',
+    fontSize: 9,
     fontWeight: 'bold',
-  }
+    letterSpacing: 1,
+    marginBottom: 3,
+  },
+  embeddingValue: {
+    color: '#10B981',
+    fontSize: 10,
+    fontFamily: 'monospace',
+  },
+  // ─── SUCCESS SCREEN ────────────────────────
+  successContainer: {
+    flex: 1,
+    backgroundColor: '#0A1F44',
+  },
+  successHeader: {
+    paddingTop: 20,
+    paddingBottom: 12,
+    paddingHorizontal: 24,
+    backgroundColor: '#0A1F44',
+  },
+  successHeaderTitle: {
+    color: '#F5C40A',
+    fontSize: 28,
+    fontWeight: 'bold',
+    letterSpacing: 1.5,
+  },
+  successHeaderSub: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 11,
+    letterSpacing: 1.5,
+    marginTop: 2,
+  },
+  successCard: {
+    flex: 1,
+    backgroundColor: '#F0F2F5',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successCheckCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#10B981',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  successCheckMark: {
+    color: '#fff',
+    fontSize: 36,
+    fontWeight: 'bold',
+  },
+  successTitle: {
+    fontSize: 24,
+    color: '#0A1F44',
+    fontWeight: 'bold',
+    marginBottom: 28,
+  },
+  successInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingVertical: 8,
+  },
+  successLabel: {
+    color: '#9CA3AF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  successValue: {
+    color: '#0A1F44',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  successValueSmall: {
+    color: '#6B7280',
+    fontSize: 13,
+  },
+  successDivider: {
+    width: '100%',
+    height: 1,
+    backgroundColor: '#E5E7EB',
+  },
+  doneBtn: {
+    backgroundColor: '#0A1F44',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    width: '100%',
+    marginTop: 32,
+    shadowColor: '#0A1F44',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  doneBtnText: {
+    color: '#F5C40A',
+    fontSize: 16,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+  },
 });

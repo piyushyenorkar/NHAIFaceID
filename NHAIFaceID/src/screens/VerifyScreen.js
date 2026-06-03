@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Animated, Switch } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Animated, Switch, Easing, ActivityIndicator } from 'react-native';
 import CameraView from '../components/CameraView';
 import NHAIFaceSDK from '../NHAIFaceSDK';
 import RNFS from 'react-native-fs';
@@ -25,6 +25,31 @@ export default function VerifyScreen({ navigation }) {
   const landmarksHistoryRef = useRef([]);
   const boxHistoryRef = useRef([]);
   const qualityReasonRef = useRef(null);
+
+  // Processing animations
+  const spinAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (isProcessing) {
+      Animated.loop(
+        Animated.timing(spinAnim, { toValue: 1, duration: 1200, easing: Easing.linear, useNativeDriver: true })
+      ).start();
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.06, duration: 500, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+        ])
+      ).start();
+    } else {
+      spinAnim.setValue(0);
+      pulseAnim.setValue(1);
+    }
+  }, [isProcessing]);
+
+  const spinInterpolate = spinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -179,7 +204,7 @@ export default function VerifyScreen({ navigation }) {
                     console.log('[VerifyScreen] Simulated landmarks in history — skipping variance spoof check.');
                   }
 
-                  // Extract real 128-D embedding via native MobileFaceNet TFLite
+                  // Extract real 192-D embedding via native MobileFaceNet TFLite
                   let currentEmbedding = null;
                   if (cameraViewRef.current) {
                     try {
@@ -317,33 +342,30 @@ export default function VerifyScreen({ navigation }) {
   };
 
   // Border color based on status
-  let borderColor = 'gray';
-  if (matchStatus === 'MATCHED') borderColor = '#28a745';
-  if (matchStatus === 'LOW_CONFIDENCE') borderColor = '#ffc107';
-  if (matchStatus === 'SPOOF_REJECTED') borderColor = '#dc3545';
-  if (matchStatus === 'UNKNOWN') borderColor = '#dc3545';
+  let borderColor = 'transparent';
+  if (matchStatus === 'MATCHED') borderColor = '#10B981';
+  if (matchStatus === 'LOW_CONFIDENCE') borderColor = '#F59E0B';
+  if (matchStatus === 'SPOOF_REJECTED') borderColor = '#EF4444';
+  if (matchStatus === 'UNKNOWN') borderColor = '#EF4444';
 
+  // ─── NO ENROLLED STATE ─────────────────────
   if (matchStatus === 'NO_ENROLLED') {
     return (
       <View style={styles.noEnrolledContainer}>
         <View style={styles.lockCard}>
-          <Text style={styles.lockIcon}>🔒</Text>
+          <View style={styles.lockIconCircle}>
+            <Text style={styles.lockEmoji}>🔒</Text>
+          </View>
           <Text style={styles.lockTitle}>Database Unregistered</Text>
           <Text style={styles.lockSub}>
-            No local biometric templates found. You must enroll a face template first to establish your identity profile before verification can proceed.
+            No local biometric templates found. Enroll a face template first to establish identity profile before verification.
           </Text>
           
-          <TouchableOpacity 
-            style={styles.enrollBtn} 
-            onPress={() => navigation.navigate('Enroll')}
-          >
-            <Text style={styles.enrollBtnText}>Enroll New Personnel Now</Text>
+          <TouchableOpacity style={styles.enrollBtn} onPress={() => navigation.navigate('Enroll')} activeOpacity={0.85}>
+            <Text style={styles.enrollBtnText}>Enroll New Personnel</Text>
           </TouchableOpacity>
           
-          <TouchableOpacity 
-            style={styles.homeBtn} 
-            onPress={() => navigation.navigate('Home')}
-          >
+          <TouchableOpacity style={styles.homeBtn} onPress={() => navigation.navigate('Home')} activeOpacity={0.8}>
             <Text style={styles.homeBtnText}>Return to Dashboard</Text>
           </TouchableOpacity>
         </View>
@@ -353,18 +375,29 @@ export default function VerifyScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      {/* Developer Demo Spoof Toggle */}
-      <View style={styles.simulatorHeader}>
-        <Text style={styles.simulatorLabel}>Developer Demo: Force Spoof Attack (Simulate Photo)</Text>
-        <Switch
-          value={simulateSpoof}
-          onValueChange={setSimulateSpoof}
-          trackColor={{ false: '#767577', true: '#dc3545' }}
-          thumbColor={simulateSpoof ? '#fff' : '#f4f3f4'}
-        />
+      {/* ─── HEADER ───────────────────────────────── */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Text style={styles.backArrow}>‹</Text>
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>Verify Identity</Text>
+          <Text style={styles.headerSub}>NHAI DATALAKE 3.0</Text>
+        </View>
+        {/* Dev Toggle */}
+        <View style={styles.devToggle}>
+          <Text style={styles.devLabel}>Spoof</Text>
+          <Switch
+            value={simulateSpoof}
+            onValueChange={setSimulateSpoof}
+            trackColor={{ false: 'rgba(255,255,255,0.15)', true: '#EF4444' }}
+            thumbColor="#fff"
+          />
+        </View>
       </View>
 
-      <View style={[styles.cameraWrapper, { borderColor, borderWidth: matchStatus !== 'SEARCHING' && matchStatus !== 'IDLE' ? 6 : 0 }]}>
+      {/* ─── CAMERA ───────────────────────────────── */}
+      <View style={[styles.cameraWrapper, { borderColor, borderWidth: matchStatus !== 'SEARCHING' && matchStatus !== 'IDLE' ? 4 : 0 }]}>
         <CameraView 
           ref={cameraViewRef} 
           isActive={matchStatus === 'SEARCHING' || matchStatus === 'IDLE'} 
@@ -372,127 +405,144 @@ export default function VerifyScreen({ navigation }) {
           detectedFace={detectedFace}
         />
         
-        {/* Rapid Scanning Progress Overlay */}
-        {matchStatus === 'SEARCHING' && (
+        {/* Scanning Progress Overlay */}
+        {matchStatus === 'SEARCHING' && !isProcessing && (
           <View style={styles.progressOverlay}>
-            <Text style={styles.progressText}>{statusMessage}</Text>
+            <Text style={styles.progressStatusText}>{statusMessage}</Text>
             <View style={styles.progressBarTrack}>
               <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
             </View>
           </View>
         )}
+
+        {/* Processing / Verifying Overlay */}
+        {isProcessing && (
+          <View style={styles.processingOverlay}>
+            <Animated.View style={[styles.processingSpinnerWrap, { transform: [{ scale: pulseAnim }] }]}>
+              <Animated.View style={{ transform: [{ rotate: spinInterpolate }] }}>
+                <View style={styles.spinnerRing} />
+              </Animated.View>
+              <View style={styles.spinnerCenter}>
+                <Text style={styles.spinnerIcon}>🔍</Text>
+              </View>
+            </Animated.View>
+            <Text style={styles.processingTitle}>Verifying Identity</Text>
+            <Text style={styles.processingText}>Matching neural face template against enrolled database...</Text>
+            <View style={styles.processingProgressRow}>
+              <ActivityIndicator size="small" color="#F5C40A" />
+              <Text style={styles.processingSubtext}>Analyzing liveness & embedding</Text>
+            </View>
+          </View>
+        )}
       </View>
 
+      {/* ─── RESULTS PANEL ────────────────────────── */}
       <View style={styles.resultContainer}>
-        {matchStatus === 'IDLE' && (
-          <View style={styles.matchCard}>
-            <Text style={[styles.searchingText, { marginBottom: 30 }]}>Ready to Verify</Text>
-            <TouchableOpacity style={styles.logBtn} onPress={() => setMatchStatus('SEARCHING')}>
-              <Text style={styles.logBtnText}>Scan Face (Passive Liveness)</Text>
-            </TouchableOpacity>
+
+        {matchStatus === 'SEARCHING' && !isProcessing && (
+          <View style={styles.searchingWrapper}>
+            <Text style={styles.searchingTitle}>Scanning...</Text>
+            <Text style={styles.searchingSubtext}>Analyzing LBP texture, HSV reflections & depth map</Text>
           </View>
         )}
 
-        {matchStatus === 'SEARCHING' && (
+        {matchStatus === 'SEARCHING' && isProcessing && (
           <View style={styles.searchingWrapper}>
-            <Text style={styles.searchingText}>
-              {isProcessing ? '⚙️ Biometric Audit in Progress' : 'Running Biometric Audit...'}
-            </Text>
-            
-            {/* Show live neural network embedding on screen if matching */}
-            {latestEmbeddingRef.current && (
-              <View style={{position: 'absolute', top: 120, left: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.6)', padding: 10, borderRadius: 8}}>
-                <Text style={{color: '#00FF00', fontSize: 10, fontFamily: 'monospace'}}>
-                  LIVE 128-D MobileFaceNet Embedding:
-                </Text>
-                <Text style={{color: '#00FF00', fontSize: 10, fontFamily: 'monospace', marginTop: 4}}>
-                  [{latestEmbeddingRef.current.slice(0, 8).map(v => (typeof v === 'number' ? v : 0).toFixed(4)).join(', ')} ...]
-                </Text>
-              </View>
-            )}
-
-            <Text style={styles.searchingSubtext}>
-              {isProcessing 
-                ? 'Processing offline neural network matching... Please wait.' 
-                : 'Analyzing LBP texture, HSV reflections & depth map'}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <ActivityIndicator size="small" color="#0A1F44" />
+              <Text style={[styles.searchingTitle, { marginLeft: 10, fontSize: 18 }]}>Processing Match...</Text>
+            </View>
+            <Text style={styles.searchingSubtext}>Offline neural network matching in progress</Text>
           </View>
         )}
 
         {matchStatus === 'SPOOF_REJECTED' && matchData && (
-          <View style={styles.matchCard}>
-            <Text style={styles.unknownTitle}>⚠️ SPOOF REJECTED</Text>
+          <View style={styles.resultCard}>
+            <View style={[styles.statusBadge, { backgroundColor: '#FEF2F2' }]}>
+              <Text style={[styles.statusBadgeText, { color: '#EF4444' }]}>⚠️ SPOOF REJECTED</Text>
+            </View>
             <Text style={styles.spoofReason}>{matchData.message}</Text>
             
-            <View style={styles.scoreBreakdownContainer}>
+            <View style={styles.breakdownCard}>
               <View style={styles.breakdownRow}>
-                <Text style={styles.breakdownLabel}>Texture (LBP):</Text>
-                <Text style={styles.breakdownValueRed}>{(matchData.details.texture * 100).toFixed(1)}%</Text>
+                <Text style={styles.breakdownLabel}>Texture (LBP)</Text>
+                <Text style={[styles.breakdownValue, { color: '#EF4444' }]}>{(matchData.details.texture * 100).toFixed(1)}%</Text>
               </View>
               <View style={styles.breakdownRow}>
-                <Text style={styles.breakdownLabel}>Specular Reflection:</Text>
-                <Text style={styles.breakdownValueRed}>{(matchData.details.reflection * 100).toFixed(1)}%</Text>
+                <Text style={styles.breakdownLabel}>Specular Reflection</Text>
+                <Text style={[styles.breakdownValue, { color: '#EF4444' }]}>{(matchData.details.reflection * 100).toFixed(1)}%</Text>
               </View>
               <View style={styles.breakdownRow}>
-                <Text style={styles.breakdownLabel}>3D Depth Map:</Text>
-                <Text style={styles.breakdownValueRed}>{(matchData.details.depth * 100).toFixed(1)}%</Text>
+                <Text style={styles.breakdownLabel}>3D Depth Map</Text>
+                <Text style={[styles.breakdownValue, { color: '#EF4444' }]}>{(matchData.details.depth * 100).toFixed(1)}%</Text>
               </View>
-              <View style={[styles.breakdownRow, { borderTopWidth: 1, borderColor: '#ccc', paddingTop: 6, marginTop: 6 }]}>
-                <Text style={[styles.breakdownLabel, { fontWeight: 'bold' }]}>Fused Liveness Score:</Text>
-                <Text style={styles.breakdownValueRedBold}>{(matchData.livenessScore).toFixed(1)}%</Text>
+              <View style={[styles.breakdownRow, styles.breakdownTotal]}>
+                <Text style={[styles.breakdownLabel, { fontWeight: 'bold' }]}>Fused Liveness</Text>
+                <Text style={[styles.breakdownValue, { color: '#EF4444', fontWeight: 'bold', fontSize: 16 }]}>{(matchData.livenessScore).toFixed(1)}%</Text>
               </View>
             </View>
 
-            <TouchableOpacity style={styles.retryBtn} onPress={resetSearch}>
+            <TouchableOpacity style={styles.retryBtn} onPress={resetSearch} activeOpacity={0.85}>
               <Text style={styles.retryBtnText}>Reset Scan</Text>
             </TouchableOpacity>
-            
-            <Text style={styles.earlyExitText}>Early-exit triggered in {matchData.time_ms}ms (saved embedding GPU load)</Text>
+            <Text style={styles.timingText}>Early-exit in {matchData.time_ms}ms</Text>
           </View>
         )}
 
         {(matchStatus === 'MATCHED' || matchStatus === 'LOW_CONFIDENCE') && matchData && (
-          <View style={styles.matchCard}>
-            <Text style={matchStatus === 'MATCHED' ? styles.verifiedTitle : styles.warningTitle}>
-              {matchStatus === 'MATCHED' ? '✓ VERIFIED' : '⚠ LOW CONFIDENCE'}
-            </Text>
-            <Text style={styles.nameText}>{matchData.employee.name}</Text>
-            <Text style={styles.idText}>ID: {matchData.employee.employee_id} | Liveness: {parseFloat(matchData.livenessScore).toFixed(1)}%</Text>
+          <View style={styles.resultCard}>
+            <View style={[styles.statusBadge, { backgroundColor: matchStatus === 'MATCHED' ? '#F0FDF4' : '#FFFBEB' }]}>
+              <Text style={[styles.statusBadgeText, { color: matchStatus === 'MATCHED' ? '#10B981' : '#F59E0B' }]}>
+                {matchStatus === 'MATCHED' ? '✓ VERIFIED' : '⚠ LOW CONFIDENCE'}
+              </Text>
+            </View>
+            <Text style={styles.matchedName}>{matchData.employee.name}</Text>
+            <Text style={styles.matchedId}>ID: {matchData.employee.employee_id} · Liveness: {parseFloat(matchData.livenessScore).toFixed(1)}%</Text>
             
             <View style={styles.confidenceWrapper}>
-              <Text style={styles.confidenceLabel}>Face Matching Confidence: {matchData.confidence}%</Text>
+              <View style={styles.confidenceHeader}>
+                <Text style={styles.confidenceLabel}>Face Matching Confidence</Text>
+                <Text style={[styles.confidencePercent, { color: matchStatus === 'MATCHED' ? '#10B981' : '#F59E0B' }]}>{matchData.confidence}%</Text>
+              </View>
               <View style={styles.barTrack}>
                 <Animated.View style={[
                   styles.barFill, 
                   { 
                     width: confidenceAnim.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }),
-                    backgroundColor: matchStatus === 'MATCHED' ? '#28a745' : '#ffc107'
+                    backgroundColor: matchStatus === 'MATCHED' ? '#10B981' : '#F59E0B'
                   }
                 ]} />
               </View>
             </View>
 
-            <View style={styles.miniBreakdown}>
-              <Text style={styles.miniBreakdownText}>
-                Detect: {matchData.breakdown.detection}ms | Liveness: {matchData.breakdown.liveness}ms | Embed: {matchData.breakdown.embedding}ms | SQL Match: {matchData.breakdown.sqlite}ms
-              </Text>
+            <View style={styles.timingRow}>
+              <Text style={styles.timingChip}>🔎 {matchData.breakdown.detection}ms</Text>
+              <Text style={styles.timingChip}>🧬 {matchData.breakdown.liveness}ms</Text>
+              <Text style={styles.timingChip}>⚡ {matchData.breakdown.embedding}ms</Text>
+              <Text style={styles.timingChip}>💾 {matchData.breakdown.sqlite}ms</Text>
             </View>
             
-            <TouchableOpacity style={[styles.logBtn, { backgroundColor: matchStatus === 'MATCHED' ? '#003087' : '#ffc107' }]} onPress={logAttendance}>
-              <Text style={[styles.logBtnText, { color: matchStatus === 'MATCHED' ? '#FFD700' : '#000' }]}>Log Attendance</Text>
+            <TouchableOpacity 
+              style={[styles.primaryBtn, { backgroundColor: matchStatus === 'MATCHED' ? '#0A1F44' : '#F59E0B' }]} 
+              onPress={logAttendance}
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.primaryBtnText, { color: matchStatus === 'MATCHED' ? '#F5C40A' : '#000' }]}>Log Attendance</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.secondaryRetryBtn} onPress={resetSearch}>
-              <Text style={styles.secondaryRetryBtnText}>Scan Again</Text>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={resetSearch}>
+              <Text style={styles.secondaryBtnText}>Scan Again</Text>
             </TouchableOpacity>
           </View>
         )}
 
         {matchStatus === 'UNKNOWN' && (
-          <View style={styles.matchCard}>
-            <Text style={styles.unknownTitle}>NO MATCH FOUND</Text>
-            <Text style={styles.idText}>{matchData?.message || 'No face matched in offline database.'}</Text>
-            <TouchableOpacity style={styles.retryBtn} onPress={resetSearch}>
+          <View style={styles.resultCard}>
+            <View style={[styles.statusBadge, { backgroundColor: '#FEF2F2' }]}>
+              <Text style={[styles.statusBadgeText, { color: '#EF4444' }]}>✕ NO MATCH FOUND</Text>
+            </View>
+            <Text style={styles.unknownMessage}>{matchData?.message || 'No face matched in offline database.'}</Text>
+            <TouchableOpacity style={styles.retryBtn} onPress={resetSearch} activeOpacity={0.85}>
               <Text style={styles.retryBtnText}>Try Again</Text>
             </TouchableOpacity>
           </View>
@@ -505,286 +555,431 @@ export default function VerifyScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: '#0A1F44',
   },
+  // ─── HEADER ────────────────────────────────
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0A1F44',
+    paddingTop: 12,
+    paddingBottom: 10,
+    paddingHorizontal: 16,
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  backArrow: {
+    color: '#F5C40A',
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginTop: -2,
+  },
+  headerTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+  },
+  headerSub: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 11,
+    letterSpacing: 1.5,
+    marginTop: 1,
+  },
+  devToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  devLabel: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 11,
+    fontWeight: '600',
+    marginRight: 6,
+  },
+  // ─── CAMERA ────────────────────────────────
   cameraWrapper: {
-    flex: 1.2,
+    flex: 1.1,
     position: 'relative',
+    borderRadius: 0,
   },
   progressOverlay: {
     position: 'absolute',
-    top: 20,
-    alignSelf: 'center',
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    paddingVertical: 12,
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(10, 31, 68, 0.90)',
+    paddingVertical: 14,
     paddingHorizontal: 20,
-    borderRadius: 16,
     alignItems: 'center',
-    width: '80%'
   },
-  progressText: {
-    color: '#FFD700',
+  progressStatusText: {
+    color: '#F5C40A',
     fontSize: 14,
     fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 8,
   },
   progressBarTrack: {
     width: '100%',
     height: 4,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
     borderRadius: 2,
-    marginTop: 8,
     overflow: 'hidden',
   },
   progressBarFill: {
     height: '100%',
-    backgroundColor: '#FFD700',
+    backgroundColor: '#F5C40A',
+    borderRadius: 2,
   },
+  // ─── PROCESSING OVERLAY ────────────────────
+  processingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(10, 31, 68, 0.95)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  processingSpinnerWrap: {
+    width: 72,
+    height: 72,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 18,
+  },
+  spinnerRing: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 3,
+    borderColor: 'rgba(245,196,10,0.15)',
+    borderTopColor: '#F5C40A',
+    borderRightColor: '#F5C40A',
+  },
+  spinnerCenter: {
+    position: 'absolute',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(245,196,10,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  spinnerIcon: {
+    fontSize: 22,
+  },
+  processingTitle: {
+    color: '#F5C40A',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 4,
+    letterSpacing: 0.5,
+  },
+  processingText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  processingProgressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  processingSubtext: {
+    color: '#F5C40A',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  // ─── RESULTS PANEL ─────────────────────────
   resultContainer: {
-    flex: 0.8,
-    backgroundColor: '#FFFFFF',
+    flex: 0.9,
+    backgroundColor: '#F0F2F5',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 12,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 5,
-  },
-  matchCard: {
-    alignItems: 'center',
-    width: '100%',
-  },
-  verifiedTitle: {
-    color: '#28a745',
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  warningTitle: {
-    color: '#ffc107',
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  unknownTitle: {
-    color: '#dc3545',
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  nameText: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    color: '#003087',
-    marginBottom: 4,
-  },
-  idText: {
-    fontSize: 14,
-    color: '#6c757d',
-    marginBottom: 16,
-  },
-  confidenceWrapper: {
-    width: '100%',
-    marginBottom: 12,
-  },
-  confidenceLabel: {
-    fontSize: 14,
-    color: '#333',
-    marginBottom: 6,
-    fontWeight: '500',
-  },
-  barTrack: {
-    height: 12,
-    width: '100%',
-    backgroundColor: '#e9ecef',
-    borderRadius: 6,
-    overflow: 'hidden',
-  },
-  barFill: {
-    height: '100%',
-    borderRadius: 6,
-  },
-  miniBreakdown: {
-    marginVertical: 10,
-  },
-  miniBreakdownText: {
-    fontSize: 10,
-    color: '#888',
-    textAlign: 'center',
-  },
-  logBtn: {
-    width: '100%',
-    backgroundColor: '#003087',
-    paddingVertical: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  logBtnText: {
-    color: '#FFD700',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  secondaryRetryBtn: {
-    width: '100%',
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginTop: 6,
-  },
-  secondaryRetryBtnText: {
-    color: '#003087',
-    fontSize: 15,
-    fontWeight: 'bold',
-  },
-  retryBtn: {
-    width: '100%',
-    backgroundColor: '#003087',
-    paddingVertical: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  retryBtnText: {
-    color: '#FFD700',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  spoofReason: {
-    fontSize: 16,
-    color: '#dc3545',
-    textAlign: 'center',
-    marginBottom: 16,
-    fontWeight: 'bold',
-  },
-  scoreBreakdownContainer: {
-    backgroundColor: '#f8f9fa',
-    width: '100%',
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e9ecef',
-    marginBottom: 12,
-  },
-  breakdownRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 4,
-  },
-  breakdownLabel: {
-    color: '#555',
-    fontSize: 13,
-  },
-  breakdownValueRed: {
-    color: '#dc3545',
-    fontSize: 13,
-    fontWeight: 'bold',
-  },
-  breakdownValueRedBold: {
-    color: '#dc3545',
-    fontSize: 15,
-    fontWeight: 'bold',
-  },
-  earlyExitText: {
-    fontSize: 10,
-    color: '#28a745',
-    marginTop: 10,
-    fontWeight: 'bold',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 8,
   },
   searchingWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 40,
+    flex: 1,
   },
-  searchingText: {
-    fontSize: 22,
+  searchingTitle: {
+    fontSize: 20,
     fontWeight: 'bold',
-    color: '#003087',
-    marginBottom: 8,
+    color: '#0A1F44',
+    marginBottom: 6,
   },
   searchingSubtext: {
     fontSize: 13,
-    color: '#6c757d',
+    color: '#9CA3AF',
     textAlign: 'center',
   },
+  // ─── RESULT CARD ───────────────────────────
+  resultCard: {
+    alignItems: 'center',
+    width: '100%',
+    flex: 1,
+  },
+  statusBadge: {
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    marginBottom: 12,
+  },
+  statusBadgeText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+  },
+  matchedName: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#0A1F44',
+    marginBottom: 2,
+  },
+  matchedId: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginBottom: 14,
+  },
+  confidenceWrapper: {
+    width: '100%',
+    marginBottom: 10,
+  },
+  confidenceHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  confidenceLabel: {
+    fontSize: 13,
+    color: '#374151',
+    fontWeight: '600',
+  },
+  confidencePercent: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  barTrack: {
+    height: 10,
+    width: '100%',
+    backgroundColor: '#E5E7EB',
+    borderRadius: 5,
+    overflow: 'hidden',
+  },
+  barFill: {
+    height: '100%',
+    borderRadius: 5,
+  },
+  timingRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+    marginBottom: 12,
+  },
+  timingChip: {
+    fontSize: 10,
+    color: '#9CA3AF',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 6,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    marginHorizontal: 3,
+    marginVertical: 2,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  primaryBtn: {
+    width: '100%',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 4,
+    shadowColor: '#0A1F44',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  primaryBtnText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+  },
+  secondaryBtn: {
+    width: '100%',
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  secondaryBtnText: {
+    color: '#0A1F44',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  retryBtn: {
+    width: '100%',
+    backgroundColor: '#0A1F44',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 16,
+    shadowColor: '#0A1F44',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  retryBtnText: {
+    color: '#F5C40A',
+    fontSize: 16,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+  },
+  spoofReason: {
+    fontSize: 14,
+    color: '#EF4444',
+    textAlign: 'center',
+    marginBottom: 12,
+    fontWeight: '600',
+  },
+  breakdownCard: {
+    backgroundColor: '#fff',
+    width: '100%',
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    marginBottom: 8,
+  },
+  breakdownRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 5,
+  },
+  breakdownTotal: {
+    borderTopWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingTop: 8,
+    marginTop: 4,
+  },
+  breakdownLabel: {
+    color: '#6B7280',
+    fontSize: 13,
+  },
+  breakdownValue: {
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  timingText: {
+    fontSize: 10,
+    color: '#10B981',
+    marginTop: 8,
+    fontWeight: 'bold',
+  },
+  unknownMessage: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 8,
+    lineHeight: 20,
+  },
+  // ─── NO ENROLLED STATE ─────────────────────
   noEnrolledContainer: {
     flex: 1,
-    backgroundColor: '#003087',
+    backgroundColor: '#0A1F44',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
   },
   lockCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
+    borderRadius: 24,
     padding: 32,
     alignItems: 'center',
     width: '100%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 15,
-    elevation: 10,
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 12,
   },
-  lockIcon: {
-    fontSize: 64,
-    marginBottom: 20,
+  lockIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#FEF2F2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  lockEmoji: {
+    fontSize: 32,
   },
   lockTitle: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
-    color: '#003087',
-    marginBottom: 12,
+    color: '#0A1F44',
+    marginBottom: 10,
     textAlign: 'center',
   },
   lockSub: {
     fontSize: 14,
-    color: '#666',
+    color: '#6B7280',
     textAlign: 'center',
     lineHeight: 22,
-    marginBottom: 32,
+    marginBottom: 28,
   },
   enrollBtn: {
-    backgroundColor: '#003087',
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 10,
+    backgroundColor: '#0A1F44',
+    paddingVertical: 14,
+    borderRadius: 12,
     width: '100%',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
+    shadowColor: '#0A1F44',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 6,
   },
   enrollBtnText: {
-    color: '#FFD700',
-    fontSize: 16,
+    color: '#F5C40A',
+    fontSize: 15,
     fontWeight: 'bold',
+    letterSpacing: 0.5,
   },
   homeBtn: {
-    backgroundColor: 'transparent',
-    paddingVertical: 14,
+    paddingVertical: 12,
     width: '100%',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: '#ced4da',
-    borderRadius: 10,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
   },
   homeBtnText: {
-    color: '#495057',
-    fontSize: 15,
+    color: '#6B7280',
+    fontSize: 14,
     fontWeight: '600',
   },
-  simulatorHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#1a1a1a',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
-    borderColor: '#333'
-  },
-  simulatorLabel: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '500'
-  }
 });

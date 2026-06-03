@@ -539,7 +539,8 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
     }));
   }
 
-  const meshPoints = activeBox ? getFaceMesh468(activeBox) : [];
+  // Use the real landmarks (activeKeypoints) for mesh rendering — they come from MLKit
+  // contours and track the face precisely. No need to re-compute from the bounding box.
 
   return (
     <View style={styles.container} onLayout={handleLayout}>
@@ -569,7 +570,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         ]} />
       )}
 
-      {isActive && meshPoints.map((pt, idx) => (
+      {isActive && activeKeypoints.length > 0 && activeKeypoints.map((pt, idx) => (
         <View 
           key={idx}
           style={[
