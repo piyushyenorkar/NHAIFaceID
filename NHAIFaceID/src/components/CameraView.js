@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } f
 import { StyleSheet, Text, View, Dimensions, TouchableOpacity } from 'react-native';
 import { Camera, useCameraDevice, useCameraFormat, useFrameProcessor, runAsync } from 'react-native-vision-camera';
 import Svg, { Line, Circle, Text as SvgText } from 'react-native-svg';
-import { useFaceDetector } from 'react-native-vision-camera-face-detector';
+import { detectFaces } from 'react-native-vision-camera-face-detector';
 import { useRunOnJS } from 'react-native-worklets-core';
 
 const { width, height } = Dimensions.get('window');
@@ -304,19 +304,6 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
   const [cameraPosition, setCameraPosition] = useState('front');
   const device = useCameraDevice(cameraPosition);
 
-  const faceDetectorOptions = React.useMemo(() => ({
-    performanceMode: 'fast',
-    contourMode: 'all',
-    landmarkMode: 'none',
-    classificationMode: 'none',
-    autoMode: true,
-    windowWidth: width,
-    windowHeight: height,
-    cameraFacing: cameraPosition
-  }), [cameraPosition]);
-
-  const faceDetector = useFaceDetector(faceDetectorOptions);
-
   const format = useCameraFormat(device, [
     { fps: 30 },
     { videoResolution: { width: 1280, height: 720 } }
@@ -389,12 +376,17 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
     runAsync(frame, () => {
       'worklet';
       // Run MLKit face detection via frame processor plugin
-      const faces = faceDetector.detectFaces(frame);
+      const result = detectFaces(frame, {
+        performanceMode: 'fast',
+        contourMode: 'all',
+        landmarkMode: 'all',
+        classificationMode: 'all',
+      });
+      const faces = Array.isArray(result) ? result : (result && result.faces ? result.faces : []);
 
       if (faces.length > 0) {
         const face = faces[0];
         const bounds = face.bounds || face.boundingBox || face;
-        // Since autoMode is true, bounds and contours are already scaled to screen dimensions (width, height)
         const normalizedBox = {
           x: (bounds.x ?? bounds.left ?? 0) / width,
           y: (bounds.y ?? bounds.top ?? 0) / height,
@@ -402,8 +394,20 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
           h: (bounds.height ?? bounds.h ?? 0) / height,
         };
 
+        // Extract unique biometric signals that differ per person
+        const faceMetrics = {
+          yawAngle: typeof face.yawAngle === 'number' ? face.yawAngle : 0,
+          pitchAngle: typeof face.pitchAngle === 'number' ? face.pitchAngle : 0,
+          rollAngle: typeof face.rollAngle === 'number' ? face.rollAngle : 0,
+          leftEyeOpen: typeof face.leftEyeOpenProbability === 'number' ? face.leftEyeOpenProbability : 0.5,
+          rightEyeOpen: typeof face.rightEyeOpenProbability === 'number' ? face.rightEyeOpenProbability : 0.5,
+          smiling: typeof face.smilingProbability === 'number' ? face.smilingProbability : 0.5,
+        };
+
+        // Try to extract contours - handle different formats from different library versions
         const normalizedContours = {};
-        if (face.contours) {
+        const rawContours = face.contours;
+        if (rawContours && typeof rawContours === 'object') {
           const keys = [
             'FACE', 'LEFT_CHEEK', 'LEFT_EYE', 'LEFT_EYEBROW_BOTTOM', 'LEFT_EYEBROW_TOP',
             'LOWER_LIP_BOTTOM', 'LOWER_LIP_TOP', 'NOSE_BOTTOM', 'NOSE_BRIDGE',
@@ -412,7 +416,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
           ];
           for (let i = 0; i < keys.length; i++) {
             const key = keys[i];
-            const points = face.contours[key];
+            const points = rawContours[key];
             if (points && points.length > 0) {
               const normPoints = [];
               for (let j = 0; j < points.length; j++) {
@@ -426,22 +430,15 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
           }
         }
 
-        const euler = {
-          yawAngle: typeof face.yawAngle === 'number' ? face.yawAngle : 0,
-          pitchAngle: typeof face.pitchAngle === 'number' ? face.pitchAngle : 0,
-          rollAngle: typeof face.rollAngle === 'number' ? face.rollAngle : 0,
-        };
-
-        // Embedding and simulatedLandmarks are computed on the JS thread
-        // to prevent Worklet sharing errors with complex Math functions.
-        runHandleFaceResult(normalizedBox, normalizedContours, euler);
+        // Pass both contours AND face metrics to the JS thread
+        runHandleFaceResult(normalizedBox, normalizedContours, faceMetrics);
       } else {
         if (frameCount.current % 5 === 0) {
           runHandleNoFace();
         }
       }
     });
-  }, [isActive, faceDetector]);
+  }, [isActive]);
 
   const toggleCamera = () => {
     setCameraPosition(prev => prev === 'front' ? 'back' : 'front');
