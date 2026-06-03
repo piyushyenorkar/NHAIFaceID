@@ -325,9 +325,6 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
   const [hasPermission, setHasPermission] = useState(false);
   const [layoutDims, setLayoutDims] = useState({ w: width, h: height });
 
-  const exposureValue = device?.supportsExposureBias 
-    ? Math.min(1.2, device.maxExposureBias ?? 1.2) 
-    : undefined;
 
   const handleLayout = (event) => {
     const { width: lw, height: lh } = event.nativeEvent.layout;
@@ -484,7 +481,6 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         frameProcessor={frameProcessor}
         pixelFormat="yuv"
         lowLightBoost={device?.supportsLowLightBoost}
-        exposure={exposureValue}
       />
       
       {activeBox && (
