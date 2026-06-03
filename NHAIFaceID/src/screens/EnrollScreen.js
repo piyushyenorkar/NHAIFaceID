@@ -139,7 +139,7 @@ export default function EnrollScreen({ navigation }) {
         }
 
         let isMovingTooFast = false;
-        if (boxHistoryRef.current.length >= 3) {
+        if (enrollStageRef.current === 'CENTER' && boxHistoryRef.current.length >= 3) {
           let totalDiff = 0;
           const history = boxHistoryRef.current;
           for (let i = 1; i < history.length; i++) {
@@ -240,7 +240,7 @@ export default function EnrollScreen({ navigation }) {
             return Math.max(baseline, prev - 2); // decay progress slowly to baseline of active stage
           }
 
-          const nextProgress = prev + 2; // Takes 1 second to lock each 20% stage segment
+          const nextProgress = target; // Instant lock!
           
           if (currentStage === 'CENTER') {
             setStatusMessage(`Aligning center pose: ${Math.round((nextProgress - baseline) / 20 * 100)}%`);

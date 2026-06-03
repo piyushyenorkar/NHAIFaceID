@@ -348,19 +348,18 @@ export function estimatePoseAngle(landmarks) {
     const yaw = landmarks.yawAngle;
     const pitch = landmarks.pitchAngle;
     
-    // Classify based on MLKit Euler angles in degrees
-    if (yaw < -13) {
+    // Contiguous classification based on MLKit Euler angles in degrees
+    if (yaw < -10) {
       return 'left';
-    } else if (yaw > 13) {
+    } else if (yaw > 10) {
       return 'right';
-    } else if (pitch > 10) {
+    } else if (pitch > 8) {
       return 'up';
-    } else if (pitch < -10) {
+    } else if (pitch < -8) {
       return 'down';
-    } else if (Math.abs(yaw) <= 10 && Math.abs(pitch) <= 8) {
+    } else {
       return 'center';
     }
-    return 'unknown';
   }
 
   if (!landmarks || landmarks.length < 468) return 'unknown';
@@ -392,19 +391,18 @@ export function estimatePoseAngle(landmarks) {
   if (bottomDist === 0) return 'unknown';
   const pitchRatio = topDist / bottomDist;
   
-  if (yawRatio > 1.45) {
+  // Contiguous landmark ratio classification fallback
+  if (yawRatio > 1.30) {
     return 'left';
-  } else if (yawRatio < 0.69) {
+  } else if (yawRatio < 0.77) {
     return 'right';
-  } else if (pitchRatio < 0.60) {
+  } else if (pitchRatio < 0.75) {
     return 'up';
-  } else if (pitchRatio > 1.15) {
+  } else if (pitchRatio > 1.10) {
     return 'down';
-  } else if (yawRatio >= 0.72 && yawRatio <= 1.38 && pitchRatio >= 0.65 && pitchRatio <= 1.10) {
+  } else {
     return 'center';
   }
-  
-  return 'unknown';
 }
 
 
