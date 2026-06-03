@@ -325,13 +325,12 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
   const [hasPermission, setHasPermission] = useState(false);
   const [layoutDims, setLayoutDims] = useState({ w: width, h: height });
 
-  const exposureValue = device?.supportsExposureBias 
-    ? Math.min(2.0, device.maxExposureBias ?? 2.0) 
+  const exposureValue = (device && typeof device.maxExposure === 'number' && device.maxExposure > 0)
+    ? Math.min(4.0, device.maxExposure)
     : undefined;
 
-  console.log('[CameraView] Device supportsExposureBias:', device?.supportsExposureBias, 
-              'min:', device?.minExposureBias, 
-              'max:', device?.maxExposureBias,
+  console.log('[CameraView] Device exposure limits - minExposure:', device?.minExposure, 
+              'maxExposure:', device?.maxExposure,
               'chosen exposureValue:', exposureValue);
 
   const handleLayout = (event) => {
