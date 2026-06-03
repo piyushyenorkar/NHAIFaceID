@@ -254,7 +254,7 @@ export default function EnrollScreen({ navigation }) {
             <Text style={styles.processingText}>
               Analyzing passive liveness cues & extracting offline face template.
             </Text>
-            <Text style={styles.statusSubtext}>
+            <Text style={styles.processingSubtext}>
               {Math.round(progress)}% Complete - Do not move
             </Text>
 

@@ -183,9 +183,11 @@ export default function VerifyScreen({ navigation }) {
                         });
                         setMatchStatus('UNKNOWN');
                       } else {
+                        // NO_MATCH - briefly show unknown then auto retry
                         setMatchData({
                           message: 'No face matched in offline database.'
                         });
+                        setMatchStatus('UNKNOWN');
                       }
                 } catch (err) {
                   console.error('[VerifyScreen] Verification error:', err);
@@ -374,7 +376,7 @@ export default function VerifyScreen({ navigation }) {
 
             <View style={styles.miniBreakdown}>
               <Text style={styles.miniBreakdownText}>
-                Detect: {matchData.breakdown.detection}ms | Liveness: {matchData.breakdown.liveness}ms | Embed: {matchData.breakdown.embedding}ms | SQL Match: {matchData.breakdown.sqlite}ms
+                Liveness: {matchData.breakdown.liveness}ms | SQL Match: {matchData.breakdown.sqlite}ms | Total: {matchData.time_ms}ms
               </Text>
             </View>
             

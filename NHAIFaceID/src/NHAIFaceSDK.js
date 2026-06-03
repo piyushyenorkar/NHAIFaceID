@@ -50,10 +50,11 @@ class NHAIFaceSDK {
     }
 
     // Check if the face already exists in the system to prevent duplicate enrollments
-    // Even a LOW_CONFIDENCE match (>0.50) means this face is likely already registered
+    // Threshold is set to 0.80 (high confidence) to avoid false positives from
+    // landmark-geometry-based embeddings where similar camera framing can produce similar vectors.
     const dupCheck = await this.verifyEmbedding(embedding, landmarks, 'enrollment_check', true);
-    if (dupCheck.status === 'MATCH' || dupCheck.status === 'LOW_CONFIDENCE' || dupCheck.confidence > 0.45) {
-      throw new Error(`Face is already enrolled under Employee ID: ${dupCheck.employeeId || 'Unknown'} (${dupCheck.name || 'Unknown'}). New unique face required.`);
+    if (dupCheck.status === 'MATCH' && parseFloat(dupCheck.confidence) > 80) {
+      throw new Error(`Face is already enrolled under Employee ID: ${dupCheck.employee?.employee_id || 'Unknown'} (${dupCheck.employee?.name || 'Unknown'}). New unique face required.`);
     }
 
     // Extract mathematical face registration profile
