@@ -23,7 +23,7 @@ apply plugin: "com.facebook.react.rootproject"
 allprojects {
     configurations.all {
         resolutionStrategy {
-            force 'com.microsoft.onnxruntime:onnxruntime-android:1.17.1'
+            force 'com.microsoft.onnxruntime:onnxruntime-android:1.24.3'
         }
     }
     repositories {

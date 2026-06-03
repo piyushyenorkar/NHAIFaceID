@@ -208,7 +208,10 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
       performanceMode: 'fast',
       contourMode: 'all',
       landmarkMode: 'none',
-      classificationMode: 'none'
+      classificationMode: 'none',
+      minFaceSize: 0.15,
+      trackingEnabled: false,
+      convertFrame: false
     });
 
     const faces = result && result.faces ? result.faces : [];
