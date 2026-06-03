@@ -7,6 +7,7 @@
 import { initFaceDetector, detectFace } from './services/faceDetection';
 import { initFaceRecognition, alignAndCropFace, generateEmbedding } from './services/faceRecognition';
 import { runPassiveLiveness, calculateFacialRatios, calculateDepthVariance } from './services/livenessDetection';
+import { loadAntiSpoofModel } from './services/antiSpoofCheck';
 import { initDB, getDBConnection, insertEnrolledFace, insertVerificationLog } from './services/localStorage';
 import { awsSyncManager } from './services/awsSync';
 import { cosineSimilarity } from './utils/vectorMath';
@@ -28,6 +29,13 @@ class NHAIFaceSDK {
     await initFaceDetector();
     await initFaceRecognition();
 
+    // Pre-warm the ONNX anti-spoof model so it's ready on the first verify call
+    try {
+      await loadAntiSpoofModel();
+    } catch (e) {
+      console.warn('[NHAIFaceSDK] ONNX anti-spoof model failed to pre-warm (will retry on first use):', e.message);
+    }
+
     // Start background AWS offline queue listener
     awsSyncManager.startListener();
 
@@ -39,22 +47,22 @@ class NHAIFaceSDK {
    * 2. enrollEmbedding(employeeId, name, embedding, landmarks, photoPath)
    * Extracts facial ratios and saves the pre-computed embedding from the native C++ frame processor to SQLite.
    */
-  async enrollEmbedding(employeeId, name, embedding, landmarks, photoPath = null) {
+  async enrollEmbedding(employeeId, name, embedding, landmarks, photoPath = null, bbox = null) {
     if (!employeeId || !name) throw new Error('employeeId and name are required');
     if (!embedding) throw new Error('Valid face embedding is required');
 
-    // Strict enrollment anti-spoofing check
-    const livenessResult = await runPassiveLiveness(null, landmarks, null);
+    // Strict enrollment anti-spoofing check — pass bbox so ONNX inference can run if image is available
+    const livenessResult = await runPassiveLiveness(null, landmarks, bbox);
     if (!livenessResult.passed) {
       throw new Error(`Enrollment rejected: Liveness check failed (Score: ${(livenessResult.score * 100).toFixed(1)}%). Spoof enrollments are prohibited.`);
     }
 
     // Check if the face already exists in the system to prevent duplicate enrollments
-    // Threshold is set to 0.80 (high confidence) to avoid false positives from
-    // landmark-geometry-based embeddings where similar camera framing can produce similar vectors.
-    const dupCheck = await this.verifyEmbedding(embedding, landmarks, 'enrollment_check', true);
-    if (dupCheck.status === 'MATCH' && parseFloat(dupCheck.confidence) > 80) {
-      throw new Error(`Face is already enrolled under Employee ID: ${dupCheck.employee?.employee_id || 'Unknown'} (${dupCheck.employee?.name || 'Unknown'}). New unique face required.`);
+    // Even a LOW_CONFIDENCE match (>0.50) means this face is likely already registered
+    const centerEmbedding = Array.isArray(embedding[0]) ? embedding[0] : embedding;
+    const dupCheck = await this.verifyEmbedding(centerEmbedding, landmarks, 'enrollment_check', true);
+    if (dupCheck.status === 'MATCH' || dupCheck.status === 'LOW_CONFIDENCE' || dupCheck.confidence > 0.45) {
+      throw new Error(`Face is already enrolled under Employee ID: ${dupCheck.employeeId || 'Unknown'} (${dupCheck.name || 'Unknown'}). New unique face required.`);
     }
 
     // Extract mathematical face registration profile
@@ -92,13 +100,13 @@ class NHAIFaceSDK {
    * Uses the pre-computed embedding from the native C++ frame processor (MobileFaceNet).
    * Completely bypasses JS photo capture, making verification instant.
    */
-  async verifyEmbedding(currentEmbedding, landmarks, deviceId = 'unknown', skipLog = false) {
+  async verifyEmbedding(currentEmbedding, landmarks, deviceId = 'unknown', skipLog = false, bbox = null) {
     MetricsLogger.startTimer('Total Pipeline');
     
-    // STEP 1: Passive Liveness
+    // STEP 1: Passive Liveness — pass bbox so ONNX inference can run if image frame is available
     MetricsLogger.startTimer('1. Passive Liveness');
-    // Since we skipped taking a photo, we pass null to use coordinate/depth based liveness
-    const livenessResult = await runPassiveLiveness(null, landmarks, null);
+    // Since we skipped taking a photo, we pass null as the frame; bbox enables ONNX crop when frame is provided
+    const livenessResult = await runPassiveLiveness(null, landmarks, bbox);
     const livenessTime = MetricsLogger.endTimer('1. Passive Liveness');
 
     if (!livenessResult.passed) {
@@ -143,8 +151,20 @@ class NHAIFaceSDK {
         const row = results.rows.item(i);
         const storedEmbedding = JSON.parse(row.embedding);
         
-        // 1. Calculate base embedding similarity
-        const embeddingScore = cosineSimilarity(currentEmbedding, storedEmbedding);
+        // 1. Calculate base embedding similarity (handles single vector or multi-template ensemble)
+        let embeddingScore = 0;
+        if (Array.isArray(storedEmbedding[0])) {
+          let maxSim = -1;
+          for (const emb of storedEmbedding) {
+            const sim = cosineSimilarity(currentEmbedding, emb);
+            if (sim > maxSim) {
+              maxSim = sim;
+            }
+          }
+          embeddingScore = maxSim;
+        } else {
+          embeddingScore = cosineSimilarity(currentEmbedding, storedEmbedding);
+        }
         
         // 2. Perform geometric verification against registered template
         const storedRatios = JSON.parse(row.face_ratios || '{}');
@@ -158,9 +178,9 @@ class NHAIFaceSDK {
           const interpupillaryError = interpupillaryDiff / storedRatios.interpupillaryRatio;
           const noseHeightError = noseHeightDiff / storedRatios.noseHeightRatio;
 
-          // If ratios deviate by > 15%, apply a severe structural mismatch penalty
-          if (interpupillaryError > 0.15 || noseHeightError > 0.15) {
-            ratioPenalty = 0.40; // High penalty
+          // If ratios deviate by > 18%, apply a strict geometric mismatch penalty
+          if (interpupillaryError > 0.18 || noseHeightError > 0.18) {
+            ratioPenalty = 0.45; // Strict penalty
             isGeoMismatch = true;
           }
         }
@@ -182,9 +202,9 @@ class NHAIFaceSDK {
     // Classification threshold:
     // MobileFaceNet native cosine similarity is generally lower than TFJS. Adjusting threshold.
     let status = 'NO_MATCH';
-    if (bestScore > 0.70) {
+    if (bestScore > 0.68) {
       status = 'MATCH';
-    } else if (bestScore >= 0.55) {
+    } else if (bestScore >= 0.52) {
       status = 'LOW_CONFIDENCE';
     }
 

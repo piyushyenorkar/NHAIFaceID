@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Animated, Switch } from 'react-native';
 import CameraView from '../components/CameraView';
-import { runPassiveLiveness } from '../services/livenessDetection';
+import { runPassiveLiveness, calculateLandmarksVariance, LIVENESS_THRESHOLD } from '../services/livenessDetection';
 
 export default function LivenessScreen({ navigation }) {
   const [isScanning, setIsScanning] = useState(true);
@@ -16,15 +16,63 @@ export default function LivenessScreen({ navigation }) {
   const depthWidth = useRef(new Animated.Value(0)).current;
   const fusionWidth = useRef(new Animated.Value(0)).current;
 
+  const landmarksHistoryRef = useRef([]);
+  const latestLandmarksRef = useRef(null);
+  const latestBboxRef = useRef(null);
+
+  const handleFaceDetected = (bbox, landmarks, embedding) => {
+    if (!isScanning) return;
+    if (bbox && landmarks) {
+      latestLandmarksRef.current = landmarks;
+      latestBboxRef.current = bbox;
+      
+      if (bbox.w > 0 && bbox.h > 0) {
+        const relativeLandmarks = landmarks.map(pt => ({
+          x: (pt.x - bbox.x) / bbox.w,
+          y: (pt.y - bbox.y) / bbox.h
+        }));
+        // Propagate the isSimulated flag so variance check knows if this frame is real data
+        relativeLandmarks.isSimulated = landmarks.isSimulated === true;
+        landmarksHistoryRef.current.push(relativeLandmarks);
+        if (landmarksHistoryRef.current.length > 20) {
+          landmarksHistoryRef.current.shift();
+        }
+      }
+    } else {
+      latestLandmarksRef.current = null;
+      latestBboxRef.current = null;
+    }
+  };
+
   useEffect(() => {
     if (!isScanning) return;
 
-    const interval = setInterval(async () => {
-      // Create mock frame and landmarks structure for testing
-      const mockFrame = { isSpoof: simulateSpoof };
-      const mockLandmarks = { isSpoof: simulateSpoof };
+    landmarksHistoryRef.current = [];
+    latestLandmarksRef.current = null;
+    latestBboxRef.current = null;
 
-      const result = await runPassiveLiveness(mockFrame, mockLandmarks);
+    const interval = setInterval(async () => {
+      const currentLandmarks = latestLandmarksRef.current;
+      const currentBbox = latestBboxRef.current;
+      
+      let isSpoof = simulateSpoof;
+      if (currentLandmarks && currentBbox) {
+        const hasSimulatedInHistory = landmarksHistoryRef.current.some(f => f.isSimulated === true);
+        if (!hasSimulatedInHistory) {
+          const avgVariance = calculateLandmarksVariance(landmarksHistoryRef.current);
+          const isSpoofDetected = landmarksHistoryRef.current.length >= 10 && avgVariance < 0.00012;
+          isSpoof = isSpoof || isSpoofDetected;
+        } else {
+          console.log('[LivenessScreen] Simulated landmarks in history — skipping variance spoof check.');
+        }
+      }
+
+      // Create frame and landmarks structure for passive liveness check
+      const mockFrame = { isSpoof };
+      const mockLandmarks = currentLandmarks ? currentLandmarks : [];
+      mockLandmarks.isSpoof = isSpoof;
+
+      const result = await runPassiveLiveness(mockFrame, mockLandmarks, currentBbox);
       setLivenessData(result);
 
       // Animate the status bars in real time
@@ -66,7 +114,11 @@ export default function LivenessScreen({ navigation }) {
     return '#dc3545'; // Red
   };
 
-  const statusColor = getStatusColor(livenessData.score * 100);
+  const hasFace = latestLandmarksRef.current !== null;
+  const statusColor = hasFace ? getStatusColor(livenessData.score * 100) : '#6c757d';
+  const statusText = hasFace 
+    ? (livenessData.score < LIVENESS_THRESHOLD ? '⚠️ SPOOF ATTACK SUSPECTED' : '✓ SECURE LIVE FACE')
+    : 'ALIGN FACE INSIDE GUIDES...';
 
   return (
     <View style={styles.container}>
@@ -82,13 +134,13 @@ export default function LivenessScreen({ navigation }) {
       </View>
 
       <View style={styles.cameraContainer}>
-        <CameraView isActive={isScanning} onFaceDetected={() => {}} />
+        <CameraView isActive={isScanning} onFaceDetected={handleFaceDetected} />
         
         {/* Real-time scanning grid overlay */}
         {isScanning && (
           <View style={[styles.gridOverlay, { borderColor: statusColor }]}>
             <Text style={[styles.statusIndicatorText, { color: statusColor }]}>
-              {simulateSpoof ? '⚠️ SPOOF ATTACK SUSPECTED' : '✓ SECURE LIVE FACE'}
+              {statusText}
             </Text>
           </View>
         )}
@@ -156,7 +208,7 @@ export default function LivenessScreen({ navigation }) {
           <View style={{ flex: 1 }}>
             <Text style={styles.fusedLabel}>Fused Anti-Spoofing Index</Text>
             <Text style={[styles.fusedStatus, { color: statusColor }]}>
-              {livenessData.score >= 0.75 ? 'PASSED (Target >= 75%)' : 'BLOCKED (Low Score)'}
+              {livenessData.score >= LIVENESS_THRESHOLD ? `PASSED (Target >= ${(LIVENESS_THRESHOLD * 100).toFixed(0)}%)` : 'BLOCKED (Low Score)'}
             </Text>
           </View>
           <Text style={[styles.fusedValue, { color: statusColor }]}>
