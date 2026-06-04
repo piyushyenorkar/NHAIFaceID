@@ -107,8 +107,8 @@ export default function EnrollScreen({ navigation }) {
 
       const angleOk = bypassPoseCheck ||
         (enrollStage === 'CENTER' && Math.abs(yaw) < 10 && Math.abs(pitch) < 10) ||
-        (enrollStage === 'LEFT' && yaw < -15) ||
-        (enrollStage === 'RIGHT' && yaw > 15) ||
+        (enrollStage === 'LEFT' && yaw > 15) ||
+        (enrollStage === 'RIGHT' && yaw < -15) ||
         (enrollStage === 'UP' && pitch > 12) ||
         (enrollStage === 'DOWN' && pitch < -12);
 
@@ -364,21 +364,29 @@ export default function EnrollScreen({ navigation }) {
         </View>
       )}
 
-      {/* Premium Pose Instruction Overlay (Centered) */}
-      {enrollStatus === 'SCANNING' && !isProcessingStageRef.current && (
-        <View style={styles.premiumInstructionCard}>
-          <Text style={styles.poseIcon}>{poseInstructions[enrollStage].icon}</Text>
-          <Text style={styles.poseTitle}>{poseInstructions[enrollStage].title}</Text>
-          <Text style={styles.poseDesc}>{poseInstructions[enrollStage].desc}</Text>
-        </View>
-      )}
-
-      {/* Progress Overlay */}
+      {/* Consolidated Dashboard Overlay */}
       {enrollStatus === 'SCANNING' && (
-        <View style={styles.progressOverlay}>
-          <Text style={styles.progressText}>
-            {statusMessage}
-          </Text>
+        <View style={styles.dashboardOverlay}>
+          
+          {!isProcessingStageRef.current ? (
+            <View style={{ alignItems: 'center', marginBottom: 20 }}>
+              <Text style={styles.poseIcon}>{poseInstructions[enrollStage].icon}</Text>
+              <Text style={styles.poseTitle}>{poseInstructions[enrollStage].title}</Text>
+              <Text style={styles.poseDesc}>{poseInstructions[enrollStage].desc}</Text>
+            </View>
+          ) : (
+            <View style={{ alignItems: 'center', marginBottom: 20 }}>
+               <Text style={styles.poseIcon}>⚙️</Text>
+               <Text style={styles.poseTitle}>Processing {enrollStage}...</Text>
+               <Text style={styles.poseDesc}>Extracting 3D geometry</Text>
+            </View>
+          )}
+
+          <View style={styles.progressHeaderRow}>
+            <Text style={styles.progressText}>{statusMessage}</Text>
+            <Text style={styles.progressPercent}>{Math.round(progress)}%</Text>
+          </View>
+          
           <View style={styles.progressBarTrack}>
             <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
           </View>
@@ -416,10 +424,6 @@ export default function EnrollScreen({ navigation }) {
               </Text>
             </View>
           </View>
-
-          <Text style={styles.instructionText}>
-            Rotate head slowly through center, left, right, up, down profiles.
-          </Text>
         </View>
       )}
 
@@ -595,29 +599,47 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 10,
   },
+  dashboardOverlay: {
+    position: 'absolute',
+    bottom: 40,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.92)',
+    paddingVertical: 24,
+    paddingHorizontal: 24,
+    borderRadius: 28,
+    width: '92%',
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 229, 255, 0.4)',
+    shadowColor: '#00E5FF',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+    zIndex: 50,
+  },
+  progressHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 8,
+  },
+  progressPercent: {
+    color: '#10B981',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
   progressText: {
     color: '#00E5FF',
     fontSize: 13,
     fontWeight: 'bold',
-    textAlign: 'center',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  liveBtn: {
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  liveDot: {
-    width: 6,
-    height: 6,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 3,
-    marginTop: 12,
-    marginBottom: 12,
+  progressBarTrack: {
+    width: '100%',
+    height: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 4,
     overflow: 'hidden',
   },
   progressBarFill: {
@@ -647,30 +669,11 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: 'bold',
   },
-  instructionText: {
-    color: '#94A3B8',
-    fontSize: 11,
-    marginTop: 12,
+  poseDesc: {
+    fontSize: 13,
+    color: '#00E5FF',
     textAlign: 'center',
-    fontStyle: 'italic',
-  },
-  premiumInstructionCard: {
-    position: 'absolute',
-    top: '40%',
-    alignSelf: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.75)', // Glassmorphic
-    paddingVertical: 24,
-    paddingHorizontal: 32,
-    borderRadius: 28,
-    borderWidth: 1.5,
-    borderColor: 'rgba(0, 229, 255, 0.4)',
-    alignItems: 'center',
-    shadowColor: '#00E5FF',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 10,
-    zIndex: 50,
+    fontWeight: '500',
   },
   poseIcon: {
     fontSize: 48,
@@ -683,12 +686,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 8,
     letterSpacing: 0.5,
-  },
-  poseDesc: {
-    fontSize: 13,
-    color: '#00E5FF',
-    textAlign: 'center',
-    fontWeight: '500',
   },
   guideFrameContainer: {
     position: 'absolute',
