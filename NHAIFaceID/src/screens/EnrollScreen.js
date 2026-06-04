@@ -250,21 +250,6 @@ export default function EnrollScreen({ navigation }) {
         </View>
       )}
 
-      {/* Developer Options for scanning */}
-      {enrollStatus === 'SCANNING' && (
-        <View style={styles.simulatorHeader}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Text style={styles.simulatorLabelDev}>Bypass Pose</Text>
-            <Switch
-              value={bypassPoseCheck}
-              onValueChange={toggleBypassPoseCheck}
-              trackColor={{ false: '#334155', true: '#10B981' }}
-              thumbColor={bypassPoseCheck ? '#FFFFFF' : '#94A3B8'}
-            />
-          </View>
-        </View>
-      )}
-
       {/* Progress Overlay */}
       {enrollStatus === 'SCANNING' && (
         <View style={styles.progressOverlay}>
@@ -275,42 +260,8 @@ export default function EnrollScreen({ navigation }) {
             <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
           </View>
           
-          {/* Visual 5-Pose Guidance Stepper */}
-          <View style={styles.stepperContainer}>
-            <View style={styles.stepItem}>
-              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'CENTER' ? '#F5C40A' : collectedEmbeddingsRef.current.CENTER ? '#10B981' : '#64748B' }]} />
-              <Text style={[styles.stepText, { color: enrollStage === 'CENTER' ? '#F5C40A' : collectedEmbeddingsRef.current.CENTER ? '#10B981' : '#64748B' }]}>
-                Center
-              </Text>
-            </View>
-            <View style={styles.stepItem}>
-              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'LEFT' ? '#F5C40A' : collectedEmbeddingsRef.current.LEFT ? '#10B981' : '#64748B' }]} />
-              <Text style={[styles.stepText, { color: enrollStage === 'LEFT' ? '#F5C40A' : collectedEmbeddingsRef.current.LEFT ? '#10B981' : '#64748B' }]}>
-                Left
-              </Text>
-            </View>
-            <View style={styles.stepItem}>
-              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'RIGHT' ? '#F5C40A' : collectedEmbeddingsRef.current.RIGHT ? '#10B981' : '#64748B' }]} />
-              <Text style={[styles.stepText, { color: enrollStage === 'RIGHT' ? '#F5C40A' : collectedEmbeddingsRef.current.RIGHT ? '#10B981' : '#64748B' }]}>
-                Right
-              </Text>
-            </View>
-            <View style={styles.stepItem}>
-              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'UP' ? '#F5C40A' : collectedEmbeddingsRef.current.UP ? '#10B981' : '#64748B' }]} />
-              <Text style={[styles.stepText, { color: enrollStage === 'UP' ? '#F5C40A' : collectedEmbeddingsRef.current.UP ? '#10B981' : '#64748B' }]}>
-                Up
-              </Text>
-            </View>
-            <View style={styles.stepItem}>
-              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'DOWN' ? '#F5C40A' : collectedEmbeddingsRef.current.DOWN ? '#10B981' : '#64748B' }]} />
-              <Text style={[styles.stepText, { color: enrollStage === 'DOWN' ? '#F5C40A' : collectedEmbeddingsRef.current.DOWN ? '#10B981' : '#64748B' }]}>
-                Down
-              </Text>
-            </View>
-          </View>
-
           <Text style={styles.instructionText}>
-            Rotate head slowly through center, left, right, up, down profiles.
+            Align your face within the guide and hold still.
           </Text>
         </View>
       )}

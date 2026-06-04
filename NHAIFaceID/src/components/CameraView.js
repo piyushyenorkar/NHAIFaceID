@@ -4,7 +4,6 @@ import { Camera, useCameraDevice, useCameraFormat, useFrameProcessor, runAsync }
 import Svg, { Line, Circle, Text as SvgText, Defs, Mask, Rect, Ellipse } from 'react-native-svg';
 import { useFaceDetector } from 'react-native-vision-camera-face-detector';
 import { Camera, useCameraDevice, useCameraFormat, useFrameProcessor, runAsync, VisionCameraProxy } from 'react-native-vision-camera';
-import Svg, { Line, Circle, Text as SvgText } from 'react-native-svg';
 import { useRunOnJS } from 'react-native-worklets-core';
 
 const faceDetectorPlugin = VisionCameraProxy.initFrameProcessorPlugin('detectFaces', {
@@ -581,7 +580,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
       
       {/* Center Oval Guide Overlay */}
       {isActive && (
-        <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
+        <Svg width="100%" height="100%" style={[StyleSheet.absoluteFill, { zIndex: 10 }]} pointerEvents="none">
           <Ellipse
             cx={layoutDims.w / 2}
             cy={layoutDims.h * 0.42}
