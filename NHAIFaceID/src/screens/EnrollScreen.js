@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, SafeAreaView, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, SafeAreaView, ScrollView, KeyboardAvoidingView, Platform, Switch } from 'react-native';
 import Svg, { Ellipse, Rect, Polyline, Path } from 'react-native-svg';
 import RNFS from 'react-native-fs';
 import CameraView from '../components/CameraView';
@@ -7,6 +7,28 @@ import NHAIFaceSDK from '../NHAIFaceSDK';
 
 import { Buffer } from 'buffer';
 import { alignAndCropFace, generateEmbedding } from '../services/faceRecognition';
+
+function calculateLandmarksVariance(history) {
+  if (!history || history.length < 2) return 0;
+  let totalVariance = 0;
+  const numPoints = history[0].length || 468;
+  for (let i = 0; i < numPoints; i++) {
+    let sumX = 0, sumY = 0;
+    for (let j = 0; j < history.length; j++) {
+      sumX += history[j][i]?.x || 0;
+      sumY += history[j][i]?.y || 0;
+    }
+    const meanX = sumX / history.length;
+    const meanY = sumY / history.length;
+    let varX = 0, varY = 0;
+    for (let j = 0; j < history.length; j++) {
+      varX += Math.pow((history[j][i]?.x || 0) - meanX, 2);
+      varY += Math.pow((history[j][i]?.y || 0) - meanY, 2);
+    }
+    totalVariance += (varX + varY) / history.length;
+  }
+  return totalVariance / numPoints;
+}
 
 export default function EnrollScreen({ navigation }) {
   useLayoutEffect(() => {
@@ -19,6 +41,10 @@ export default function EnrollScreen({ navigation }) {
   const [detectedFace, setDetectedFace] = useState(null);
   const [focusedInput, setFocusedInput] = useState(null);
 
+  const [enrollStage, setEnrollStage] = useState('CENTER');
+  const [bypassPoseCheck, setBypassPoseCheck] = useState(false);
+  const toggleBypassPoseCheck = () => setBypassPoseCheck(prev => !prev);
+
   // Scanning progress states
   const [progress, setProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState('SCANNING');
@@ -27,6 +53,10 @@ export default function EnrollScreen({ navigation }) {
   const lastDetectedRef = useRef(0);
   const progressIntervalRef = useRef(null);
   const isMountedRef = useRef(true);
+
+  const collectedEmbeddingsRef = useRef({ CENTER: null, LEFT: null, RIGHT: null, UP: null, DOWN: null });
+  const landmarksHistoryRef = useRef([]);
+  const isProcessingStageRef = useRef(false);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -45,9 +75,13 @@ export default function EnrollScreen({ navigation }) {
       return;
     }
     setProgress(0);
-    setStatusMessage('SCANNING');
+    setEnrollStage('CENTER');
+    setStatusMessage('Look Straight');
     lastDetectedRef.current = 0;
     setDetectedFace(null);
+    collectedEmbeddingsRef.current = { CENTER: null, LEFT: null, RIGHT: null, UP: null, DOWN: null };
+    landmarksHistoryRef.current = [];
+    isProcessingStageRef.current = false;
     setEnrollStatus('SCANNING');
   };
 
@@ -55,8 +89,22 @@ export default function EnrollScreen({ navigation }) {
     if (enrollStatus !== 'SCANNING') return;
     
     if (bbox && landmarks) {
-      const isCentered = true; 
-      if (isCentered) {
+      if (landmarksHistoryRef.current.length >= 10) {
+        landmarksHistoryRef.current.shift();
+      }
+      landmarksHistoryRef.current.push(landmarks);
+
+      const yaw = landmarks.yawAngle || 0;
+      const pitch = landmarks.pitchAngle || 0;
+
+      const angleOk = bypassPoseCheck ||
+        (enrollStage === 'CENTER' && Math.abs(yaw) < 10 && Math.abs(pitch) < 10) ||
+        (enrollStage === 'LEFT' && yaw < -15) ||
+        (enrollStage === 'RIGHT' && yaw > 15) ||
+        (enrollStage === 'UP' && pitch > 12) ||
+        (enrollStage === 'DOWN' && pitch < -12);
+
+      if (angleOk) {
         lastDetectedRef.current = Date.now();
         latestLandmarksRef.current = landmarks;
         latestBboxRef.current = bbox;
@@ -78,96 +126,139 @@ export default function EnrollScreen({ navigation }) {
     progressIntervalRef.current = setInterval(async () => {
       const faceDetected = Date.now() - lastDetectedRef.current < 800;
 
-      if (faceDetected) {
+      if (faceDetected && !isProcessingStageRef.current) {
         setProgress(prev => {
-          const nextProgress = prev + 5;
+          const currentStage = enrollStage;
           
-          if (nextProgress < 35) {
-            setStatusMessage(`SCANNING`);
-          } else if (nextProgress < 70) {
-            setStatusMessage(`ANALYZING`);
-          } else if (nextProgress < 100) {
-            setStatusMessage(`EXTRACTING`);
-          } else if (nextProgress >= 100) {
-            clearInterval(progressIntervalRef.current);
-            if (isMountedRef.current) setEnrollStatus('PROCESSING');
-            
-            // Defer execution by 100ms to allow React to paint the PROCESSING state
-            setTimeout(() => {
-              (async () => {
-                try {
-                  const currentLandmarks = latestLandmarksRef.current;
-                  const currentBbox = latestBboxRef.current;
-                  
-                  // Always capture a high-res photo for the user profile list
-                  let permanentPhotoPath = null;
-                  if (cameraViewRef.current) {
-                    const tempPath = await cameraViewRef.current.capturePhoto();
-                    if (tempPath) {
-                      const fileName = `enrolled_${employeeId}_${Date.now()}.jpg`;
-                      permanentPhotoPath = `${RNFS.DocumentDirectoryPath}/${fileName}`;
-                      const sourcePath = tempPath.replace('file://', '');
-                      await RNFS.copyFile(sourcePath, permanentPhotoPath);
-                      permanentPhotoPath = `file://${permanentPhotoPath}`;
-                    }
-                  }
-
-                  let currentEmbedding = latestEmbeddingRef.current;
-                  if (!currentEmbedding && permanentPhotoPath) {
-                    const cropped = await alignAndCropFace({ path: permanentPhotoPath }, currentBbox, currentLandmarks);
+          if (!collectedEmbeddingsRef.current[currentStage]) {
+            isProcessingStageRef.current = true;
+            setStatusMessage(`Processing ${currentStage}...`);
+            (async () => {
+              try {
+                const currentLandmarks = latestLandmarksRef.current;
+                const currentBbox = latestBboxRef.current;
+                
+                let currentEmbedding = latestEmbeddingRef.current;
+                if (!currentEmbedding && cameraViewRef.current) {
+                  const tempPath = await cameraViewRef.current.capturePhoto();
+                  if (tempPath) {
+                    const cropped = await alignAndCropFace({ path: tempPath }, currentBbox, currentLandmarks);
                     currentEmbedding = await generateEmbedding(cropped);
                   }
+                }
 
-                  if (!currentEmbedding) {
-                    Alert.alert('Error', 'Could not extract valid 3D facial embedding. Please try again in better lighting.');
-                    setEnrollStatus('IDLE');
-                    return;
-                  }
+                if (currentEmbedding) {
+                  collectedEmbeddingsRef.current[currentStage] = currentEmbedding;
+                }
 
-                  const result = await NHAIFaceSDK.enrollEmbedding(employeeId, name, currentEmbedding, currentLandmarks, permanentPhotoPath);
+                if (currentStage === 'CENTER') {
+                  setEnrollStage('LEFT');
+                  setProgress(20);
+                  setStatusMessage('Look Left');
+                } else if (currentStage === 'LEFT') {
+                  setEnrollStage('RIGHT');
+                  setProgress(40);
+                  setStatusMessage('Look Right');
+                } else if (currentStage === 'RIGHT') {
+                  setEnrollStage('UP');
+                  setProgress(60);
+                  setStatusMessage('Look Up');
+                } else if (currentStage === 'UP') {
+                  setEnrollStage('DOWN');
+                  setProgress(80);
+                  setStatusMessage('Look Down');
+                } else if (currentStage === 'DOWN') {
+                  setProgress(100);
+                  clearInterval(progressIntervalRef.current);
+                  if (isMountedRef.current) setEnrollStatus('PROCESSING');
                   
-                  if (isMountedRef.current) {
-                    setDetectedFace({
-                      bbox: currentBbox,
-                      landmarks: currentLandmarks,
-                      color: '#10B981'
-                    });
-                    
-                    setEnrollStatus('SUCCESS');
-                    Alert.alert('Success', `Employee ${name} (${employeeId}) has been successfully enrolled offline.`);
-                    setTimeout(() => {
-                      if (isMountedRef.current) {
-                        if (navigation.canGoBack()) {
-                          navigation.goBack();
-                        } else {
-                          navigation.navigate('Home');
+                  setTimeout(() => {
+                    (async () => {
+                      try {
+                        const finalLandmarks = latestLandmarksRef.current;
+                        const finalBbox = latestBboxRef.current;
+
+                        const avgVariance = calculateLandmarksVariance(landmarksHistoryRef.current);
+                        const isSpoofDetected = !bypassPoseCheck && landmarksHistoryRef.current.length >= 5 && avgVariance < 0.0006;
+                        
+                        let permanentPhotoPath = null;
+                        if (cameraViewRef.current) {
+                          const tempPath = await cameraViewRef.current.capturePhoto();
+                          if (tempPath) {
+                            const fileName = `enrolled_${employeeId}_${Date.now()}.jpg`;
+                            permanentPhotoPath = `${RNFS.DocumentDirectoryPath}/${fileName}`;
+                            const sourcePath = tempPath.replace('file://', '');
+                            await RNFS.copyFile(sourcePath, permanentPhotoPath);
+                            permanentPhotoPath = `file://${permanentPhotoPath}`;
+                          }
+                        }
+
+                        const ensemble = [
+                          collectedEmbeddingsRef.current.CENTER,
+                          collectedEmbeddingsRef.current.LEFT,
+                          collectedEmbeddingsRef.current.RIGHT,
+                          collectedEmbeddingsRef.current.UP,
+                          collectedEmbeddingsRef.current.DOWN
+                        ];
+
+                        if (finalLandmarks) {
+                          finalLandmarks.isSpoof = isSpoofDetected;
+                        }
+
+                        const result = await NHAIFaceSDK.enrollEmbedding(employeeId, name, ensemble, finalLandmarks, permanentPhotoPath);
+                        
+                        if (isMountedRef.current) {
+                          setDetectedFace({
+                            bbox: finalBbox,
+                            landmarks: finalLandmarks,
+                            color: '#10B981'
+                          });
+                          
+                          setEnrollStatus('SUCCESS');
+                          Alert.alert('Success', `Employee ${name} (${employeeId}) has been successfully enrolled offline.`);
+                          setTimeout(() => {
+                            if (isMountedRef.current) {
+                              if (navigation.canGoBack()) {
+                                navigation.goBack();
+                              } else {
+                                navigation.navigate('Home');
+                              }
+                            }
+                          }, 2500);
+                        }
+                      } catch (error) {
+                        console.error('[EnrollScreen]', error);
+                        if (isMountedRef.current) {
+                          setEnrollStatus('IDLE');
+                          Alert.alert('Enrollment Failed', error.message || 'Face enrollment failed due to spoofing or poor lighting.');
                         }
                       }
-                    }, 2500);
-                  }
-                } catch (error) {
-                  console.error('[EnrollScreen]', error);
-                  if (isMountedRef.current) {
-                    setEnrollStatus('IDLE');
-                    Alert.alert('Enrollment Failed', error.message || 'Face enrollment failed due to spoofing or poor lighting.');
-                  }
+                    })();
+                  }, 100);
                 }
-              })();
-            }, 100);
-            return 100;
+                
+                isProcessingStageRef.current = false;
+              } catch (err) {
+                console.error('[EnrollScreen] Stage capture error:', err);
+                isProcessingStageRef.current = false;
+              }
+            })();
+
+            return prev;
           }
-          return nextProgress;
+          return prev;
         });
       } else {
-        setProgress(0);
-        setStatusMessage('SCANNING');
+        if (!isProcessingStageRef.current) {
+          setStatusMessage(`Look ${enrollStage === 'CENTER' ? 'Straight' : enrollStage}`);
+        }
       }
     }, 100);
 
     return () => {
       if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
     };
-  }, [enrollStatus, employeeId, name, navigation]);
+  }, [enrollStatus, employeeId, name, enrollStage, bypassPoseCheck, navigation]);
 
   if (enrollStatus === 'SUCCESS') {
     return (
@@ -250,6 +341,21 @@ export default function EnrollScreen({ navigation }) {
         </View>
       )}
 
+      {/* Developer Options for scanning */}
+      {enrollStatus === 'SCANNING' && (
+        <View style={styles.simulatorHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={styles.simulatorLabelDev}>Bypass Pose</Text>
+            <Switch
+              value={bypassPoseCheck}
+              onValueChange={toggleBypassPoseCheck}
+              trackColor={{ false: '#334155', true: '#10B981' }}
+              thumbColor={bypassPoseCheck ? '#FFFFFF' : '#94A3B8'}
+            />
+          </View>
+        </View>
+      )}
+
       {/* Progress Overlay */}
       {enrollStatus === 'SCANNING' && (
         <View style={styles.progressOverlay}>
@@ -260,8 +366,42 @@ export default function EnrollScreen({ navigation }) {
             <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
           </View>
           
+          {/* Visual 5-Pose Guidance Stepper */}
+          <View style={styles.stepperContainer}>
+            <View style={styles.stepItem}>
+              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'CENTER' ? '#F5C40A' : collectedEmbeddingsRef.current.CENTER ? '#10B981' : '#64748B' }]} />
+              <Text style={[styles.stepText, { color: enrollStage === 'CENTER' ? '#F5C40A' : collectedEmbeddingsRef.current.CENTER ? '#10B981' : '#64748B' }]}>
+                Center
+              </Text>
+            </View>
+            <View style={styles.stepItem}>
+              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'LEFT' ? '#F5C40A' : collectedEmbeddingsRef.current.LEFT ? '#10B981' : '#64748B' }]} />
+              <Text style={[styles.stepText, { color: enrollStage === 'LEFT' ? '#F5C40A' : collectedEmbeddingsRef.current.LEFT ? '#10B981' : '#64748B' }]}>
+                Left
+              </Text>
+            </View>
+            <View style={styles.stepItem}>
+              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'RIGHT' ? '#F5C40A' : collectedEmbeddingsRef.current.RIGHT ? '#10B981' : '#64748B' }]} />
+              <Text style={[styles.stepText, { color: enrollStage === 'RIGHT' ? '#F5C40A' : collectedEmbeddingsRef.current.RIGHT ? '#10B981' : '#64748B' }]}>
+                Right
+              </Text>
+            </View>
+            <View style={styles.stepItem}>
+              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'UP' ? '#F5C40A' : collectedEmbeddingsRef.current.UP ? '#10B981' : '#64748B' }]} />
+              <Text style={[styles.stepText, { color: enrollStage === 'UP' ? '#F5C40A' : collectedEmbeddingsRef.current.UP ? '#10B981' : '#64748B' }]}>
+                Up
+              </Text>
+            </View>
+            <View style={styles.stepItem}>
+              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'DOWN' ? '#F5C40A' : collectedEmbeddingsRef.current.DOWN ? '#10B981' : '#64748B' }]} />
+              <Text style={[styles.stepText, { color: enrollStage === 'DOWN' ? '#F5C40A' : collectedEmbeddingsRef.current.DOWN ? '#10B981' : '#64748B' }]}>
+                Down
+              </Text>
+            </View>
+          </View>
+
           <Text style={styles.instructionText}>
-            Align your face within the guide and hold still.
+            Rotate head slowly through center, left, right, up, down profiles.
           </Text>
         </View>
       )}

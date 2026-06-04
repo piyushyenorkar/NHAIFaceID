@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { StyleSheet, Text, View, Dimensions, TouchableOpacity } from 'react-native';
-import { Camera, useCameraDevice, useCameraFormat, useFrameProcessor, runAsync } from 'react-native-vision-camera';
 import Svg, { Line, Circle, Text as SvgText, Defs, Mask, Rect, Ellipse } from 'react-native-svg';
 import { useFaceDetector } from 'react-native-vision-camera-face-detector';
 import { Camera, useCameraDevice, useCameraFormat, useFrameProcessor, runAsync, VisionCameraProxy } from 'react-native-vision-camera';
@@ -544,7 +543,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
   let activeColor = '#00FF00';
   let activeKeypoints = [];
 
-  const displayFace = detectedFace || localFace;
+  const displayFace = detectedFace || internalFace;
 
   if (displayFace && displayFace.bbox) {
     activeBox = {
