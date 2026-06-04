@@ -17,7 +17,7 @@ export default function HomeScreen({ navigation }) {
   const loadStats = async () => {
     try {
       const db = await getDBConnection();
-      
+
       const [enrollRes] = await db.executeSql('SELECT COUNT(*) as count FROM enrolled_faces');
       const enrolledCount = enrollRes.rows.item(0).count;
 
@@ -75,35 +75,12 @@ export default function HomeScreen({ navigation }) {
     <View style={styles.screen}>
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.appContainer}>
-          
+
           {/* Header */}
           <View style={styles.header}>
             <View>
               <Text style={styles.logo}>NHAI</Text>
               <Text style={styles.logoSub}>DATALAKE 3.0 — FIELD AUTH</Text>
-            </View>
-            <View style={styles.workerBlock}>
-              <View style={styles.workerTextContainer}>
-                <Text style={styles.workerName}>Ravi Kumar</Text>
-                <Text style={styles.workerSite}>Site: NH-48 Pune</Text>
-              </View>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>RK</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Search Bar - Glassmorphism */}
-          <View style={styles.searchContainer}>
-            <View style={styles.searchBar}>
-              <Text style={styles.searchIcon}>🔍</Text>
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search ID / Name"
-                placeholderTextColor="rgba(255,255,255,0.4)"
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-              />
             </View>
           </View>
 
@@ -114,101 +91,97 @@ export default function HomeScreen({ navigation }) {
             <View>
               <Text style={styles.sectionLabel}>FIELD ACTIONS</Text>
               <View style={styles.cardsRow}>
-              
-              {/* Enroll Card (Gradient) */}
-              <TouchableOpacity
-                style={[styles.actionCard]}
-                onPress={() => navigation.navigate('Enroll')}
-                activeOpacity={0.8}
-              >
-                <View style={StyleSheet.absoluteFill}>
-                  <Svg width="100%" height="100%">
-                    <Defs>
-                      <LinearGradient id="gradEnroll" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <Stop offset="0%" stopColor="#1E3A8A" />
-                        <Stop offset="100%" stopColor="#3B82F6" />
-                      </LinearGradient>
-                    </Defs>
-                    <Rect width="100%" height="100%" fill="url(#gradEnroll)" />
-                  </Svg>
-                </View>
-                <View style={styles.glow} />
-                <View>
-                  <View style={[styles.iconCircle, styles.iconCircleEnroll]}>
-                    <Svg width="28" height="28" viewBox="0 0 24 24" strokeWidth="2" stroke="#1E3A8A" fill="none" strokeLinecap="round" strokeLinejoin="round">
-                      <Path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                      <Path d="M10 9a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
-                      <Path d="M4 8v-2a2 2 0 0 1 2 -2h2" />
-                      <Path d="M4 16v2a2 2 0 0 0 2 2h2" />
-                      <Path d="M16 4h2a2 2 0 0 1 2 2v2" />
-                      <Path d="M16 20h2a2 2 0 0 0 2 -2v-2" />
-                      <Path d="M8 16a2 2 0 0 1 2 -2h4a2 2 0 0 1 2 2" />
-                    </Svg>
-                  </View>
-                  <Text style={styles.cardLabel}>Enroll</Text>
-                  <View style={{ height: 23 }} />
-                </View>
-                <View style={styles.cardFooter}>
-                  <View style={styles.timePill}>
-                    <Text style={styles.timeText}>Tap to Enroll</Text>
-                  </View>
-                  <View style={styles.arrowBtn}>
-                    <Svg width="16" height="16" viewBox="0 0 24 24" strokeWidth="3" stroke="#fff" fill="none" strokeLinecap="round" strokeLinejoin="round">
-                      <Path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                      <Path d="M5 12l14 0" />
-                      <Path d="M13 18l6 -6" />
-                      <Path d="M13 6l6 6" />
-                    </Svg>
-                  </View>
-                </View>
-              </TouchableOpacity>
 
-              {/* Verify Card (Gradient) */}
-              <TouchableOpacity
-                style={[styles.actionCard]}
-                onPress={() => navigation.navigate('Verify')}
-                activeOpacity={0.8}
-              >
-                <View style={StyleSheet.absoluteFill}>
-                  <Svg width="100%" height="100%">
-                    <Defs>
-                      <LinearGradient id="gradVerify" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <Stop offset="0%" stopColor="#064E3B" />
-                        <Stop offset="100%" stopColor="#10B981" />
-                      </LinearGradient>
-                    </Defs>
-                    <Rect width="100%" height="100%" fill="url(#gradVerify)" />
-                  </Svg>
-                </View>
-                <View style={styles.glow} />
-                <View>
-                  <View style={[styles.iconCircle, styles.iconCircleVerify]}>
-                    <Svg width="34" height="34" viewBox="0 0 24 24" strokeWidth="2" stroke="#ffffff" fill="none" strokeLinecap="round" strokeLinejoin="round">
-                      <Path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                      <Path d="M18.9 7a8 8 0 0 1 1.1 5v1a6 6 0 0 0 .8 3" />
-                      <Path d="M8 11a4 4 0 0 1 8 0v1a10 10 0 0 0 2 6" />
-                      <Path d="M12 11v2a14 14 0 0 0 2.5 8" />
-                      <Path d="M8 15a18 18 0 0 0 1.8 6" />
-                      <Path d="M4.9 19a22 22 0 0 1 -.9 -7v-1a8 8 0 0 1 12 -6.95" />
+                {/* Enroll Card (Gradient) */}
+                <TouchableOpacity
+                  style={[styles.actionCard]}
+                  onPress={() => navigation.navigate('Enroll')}
+                  activeOpacity={0.8}
+                >
+                  <View style={StyleSheet.absoluteFill}>
+                    <Svg width="100%" height="100%">
+                      <Defs>
+                        <LinearGradient id="gradEnroll" x1="0%" y1="0%" x2="100%" y2="100%">
+                          <Stop offset="0%" stopColor="#1E3A8A" />
+                          <Stop offset="100%" stopColor="#3B82F6" />
+                        </LinearGradient>
+                      </Defs>
+                      <Rect width="100%" height="100%" fill="url(#gradEnroll)" />
                     </Svg>
                   </View>
-                  <Text style={styles.cardLabel}>Verify</Text>
-                  <View style={{ height: 23 }} />
-                </View>
-                <View style={styles.cardFooter}>
-                  <View style={styles.timePill}>
-                    <Text style={styles.timeText}>Tap to Verify</Text>
+                  <View style={styles.glow} />
+                  <View>
+                    <View style={[styles.iconCircle, styles.iconCircleEnroll]}>
+                      <Svg width="28" height="28" viewBox="0 0 24 24" strokeWidth="2" stroke="#1E3A8A" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                        <Path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                        <Path d="M10 9a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+                        <Path d="M4 8v-2a2 2 0 0 1 2 -2h2" />
+                        <Path d="M4 16v2a2 2 0 0 0 2 2h2" />
+                        <Path d="M16 4h2a2 2 0 0 1 2 2v2" />
+                        <Path d="M16 20h2a2 2 0 0 0 2 -2v-2" />
+                        <Path d="M8 16a2 2 0 0 1 2 -2h4a2 2 0 0 1 2 2" />
+                      </Svg>
+                    </View>
+                    <Text style={styles.cardLabel}>Enroll</Text>
+                    <View style={{ height: 23 }} />
                   </View>
-                  <View style={styles.arrowBtn}>
-                    <Svg width="16" height="16" viewBox="0 0 24 24" strokeWidth="3" stroke="#fff" fill="none" strokeLinecap="round" strokeLinejoin="round">
-                      <Path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                      <Path d="M5 12l14 0" />
-                      <Path d="M13 18l6 -6" />
-                      <Path d="M13 6l6 6" />
+                  <View style={styles.cardFooter}>
+                    <View style={styles.actionPill}>
+                      <Text style={styles.actionPillText}>TAP TO ENROLL</Text>
+                      <Svg width="14" height="14" viewBox="0 0 24 24" strokeWidth="2.5" stroke="#fff" fill="none" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 4 }}>
+                        <Path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                        <Path d="M5 12l14 0" />
+                        <Path d="M13 18l6 -6" />
+                        <Path d="M13 6l6 6" />
+                      </Svg>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+
+                {/* Verify Card (Gradient) */}
+                <TouchableOpacity
+                  style={[styles.actionCard]}
+                  onPress={() => navigation.navigate('Verify')}
+                  activeOpacity={0.8}
+                >
+                  <View style={StyleSheet.absoluteFill}>
+                    <Svg width="100%" height="100%">
+                      <Defs>
+                        <LinearGradient id="gradVerify" x1="0%" y1="0%" x2="100%" y2="100%">
+                          <Stop offset="0%" stopColor="#064E3B" />
+                          <Stop offset="100%" stopColor="#10B981" />
+                        </LinearGradient>
+                      </Defs>
+                      <Rect width="100%" height="100%" fill="url(#gradVerify)" />
                     </Svg>
                   </View>
-                </View>
-              </TouchableOpacity>
+                  <View style={styles.glow} />
+                  <View>
+                    <View style={[styles.iconCircle, styles.iconCircleVerify]}>
+                      <Svg width="34" height="34" viewBox="0 0 24 24" strokeWidth="2" stroke="#ffffff" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                        <Path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                        <Path d="M18.9 7a8 8 0 0 1 1.1 5v1a6 6 0 0 0 .8 3" />
+                        <Path d="M8 11a4 4 0 0 1 8 0v1a10 10 0 0 0 2 6" />
+                        <Path d="M12 11v2a14 14 0 0 0 2.5 8" />
+                        <Path d="M8 15a18 18 0 0 0 1.8 6" />
+                        <Path d="M4.9 19a22 22 0 0 1 -.9 -7v-1a8 8 0 0 1 12 -6.95" />
+                      </Svg>
+                    </View>
+                    <Text style={styles.cardLabel}>Verify</Text>
+                    <View style={{ height: 23 }} />
+                  </View>
+                  <View style={styles.cardFooter}>
+                    <View style={styles.actionPill}>
+                      <Text style={styles.actionPillText}>TAP TO VERIFY</Text>
+                      <Svg width="14" height="14" viewBox="0 0 24 24" strokeWidth="2.5" stroke="#fff" fill="none" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 4 }}>
+                        <Path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                        <Path d="M5 12l14 0" />
+                        <Path d="M13 18l6 -6" />
+                        <Path d="M13 6l6 6" />
+                      </Svg>
+                    </View>
+                  </View>
+                </TouchableOpacity>
               </View>
             </View>
 
@@ -216,18 +189,18 @@ export default function HomeScreen({ navigation }) {
             <View>
               <Text style={styles.sectionLabel}>QUICK METRICS</Text>
               <View style={styles.metricsGrid}>
-                
+
                 <TouchableOpacity style={[styles.metricBox, { backgroundColor: '#F0F4FF', borderColor: '#D1DDFB' }]} onPress={() => navigation.navigate('UserList')} activeOpacity={0.7}>
                   <View style={styles.metricHeader}>
-                    <Text style={[styles.metricNum, { color: '#0A1F44' }]}>{stats.enrolledCount}</Text>
+                    <Text style={[styles.metricNum, { color: '#0A1F44' }]}>{stats.enrolledCount} / 100</Text>
                     <Text style={[styles.metricArrow, { color: '#8BA6DF' }]}>↗</Text>
                   </View>
                   <Text style={styles.metricLabel}>Total Enrolled</Text>
                 </TouchableOpacity>
-                
+
                 <TouchableOpacity style={[styles.metricBox, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]} onPress={() => navigation.navigate('UserList')} activeOpacity={0.7}>
                   <View style={styles.metricHeader}>
-                    <Text style={[styles.metricNum, { color: '#059669' }]}>{stats.verificationsToday}</Text>
+                    <Text style={[styles.metricNum, { color: '#059669' }]}>{stats.verificationsToday} / {verificationGoal}</Text>
                     <Text style={[styles.metricArrow, { color: '#6EE7B7' }]}>↗</Text>
                   </View>
                   <Text style={styles.metricLabel}>Verified Today</Text>
@@ -235,7 +208,7 @@ export default function HomeScreen({ navigation }) {
 
                 <TouchableOpacity style={[styles.metricBox, { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }]} onPress={() => navigation.navigate('UserList')} activeOpacity={0.7}>
                   <View style={styles.metricHeader}>
-                    <Text style={[styles.metricNum, { color: '#D97706' }]}>{stats.pendingSync}</Text>
+                    <Text style={[styles.metricNum, { color: '#D97706' }]}>{stats.pendingSync} / 100</Text>
                     <Text style={[styles.metricArrow, { color: '#FCD34D' }]}>↗</Text>
                   </View>
                   <Text style={styles.metricLabel}>Awaiting Sync</Text>
@@ -252,16 +225,7 @@ export default function HomeScreen({ navigation }) {
               </View>
             </View>
 
-            {/* Animated Progress Bar */}
-            <View style={styles.progressContainer}>
-              <View style={styles.progressHeader}>
-                <Text style={styles.progressTitle}>Verifications Today</Text>
-                <Text style={styles.progressText}>{stats.verificationsToday} / {verificationGoal}</Text>
-              </View>
-              <View style={styles.progressBarBg}>
-                <Animated.View style={[styles.progressBarFill, { width: widthInterpolation }]} />
-              </View>
-            </View>
+
 
             {/* Cyber-HUD System Health */}
             <View style={styles.diagBox}>
@@ -269,12 +233,12 @@ export default function HomeScreen({ navigation }) {
                 <Animated.View style={[styles.hudDot, { opacity: hudPulseAnim }]} />
                 <Text style={styles.diagHead}>SYSTEM CORE: OPTIMAL</Text>
               </View>
-              
+
               <View style={styles.hudRowContainer}>
                 <View style={styles.hudBadge}>
                   <View style={styles.hudBadgeIcon}>
                     <Svg width="14" height="14" viewBox="0 0 24 24" strokeWidth="2" stroke="#10B981" fill="none" strokeLinecap="round" strokeLinejoin="round">
-                      <Path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                      <Path stroke="none" d="M0 0h24v24H0z" fill="none" />
                       <Path d="M5 5m0 1a1 1 0 0 1 1 -1h12a1 1 0 0 1 1 1v12a1 1 0 0 1 -1 1h-12a1 1 0 0 1 -1 -1z" />
                       <Path d="M9 9h6v6h-6z" />
                       <Path d="M3 10h2" />
@@ -292,7 +256,7 @@ export default function HomeScreen({ navigation }) {
                 <View style={styles.hudBadge}>
                   <View style={styles.hudBadgeIcon}>
                     <Svg width="14" height="14" viewBox="0 0 24 24" strokeWidth="2" stroke="#10B981" fill="none" strokeLinecap="round" strokeLinejoin="round">
-                      <Path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                      <Path stroke="none" d="M0 0h24v24H0z" fill="none" />
                       <Path d="M5 7h1a2 2 0 0 0 2 -2a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1a2 2 0 0 0 2 2h1a2 2 0 0 1 2 2v9a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2" />
                       <Path d="M9 13a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" />
                     </Svg>
@@ -302,7 +266,7 @@ export default function HomeScreen({ navigation }) {
                 <View style={styles.hudBadge}>
                   <View style={styles.hudBadgeIcon}>
                     <Svg width="14" height="14" viewBox="0 0 24 24" strokeWidth="2" stroke="#10B981" fill="none" strokeLinecap="round" strokeLinejoin="round">
-                      <Path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                      <Path stroke="none" d="M0 0h24v24H0z" fill="none" />
                       <Path d="M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" />
                       <Path d="M4 6v6a8 3 0 0 0 16 0v-6" />
                       <Path d="M4 12v6a8 3 0 0 0 16 0v-6" />
@@ -315,6 +279,10 @@ export default function HomeScreen({ navigation }) {
 
             {/* Benchmark Button */}
             <TouchableOpacity style={styles.benchBtn} onPress={() => navigation.navigate('Benchmark')} activeOpacity={0.8}>
+              <Svg width="18" height="18" viewBox="0 0 24 24" strokeWidth="2.5" stroke="#0A1F44" fill="none" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 8 }}>
+                <Path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                <Path d="M3 12h4l3 -9l5 18l3 -9h6" />
+              </Svg>
               <Text style={styles.benchBtnText}>RUN DIAGNOSTIC BENCHMARK</Text>
             </TouchableOpacity>
 
@@ -341,23 +309,23 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: '#0A1F44',
-    paddingTop: 8,
+    paddingTop: 14,
     paddingHorizontal: 20,
-    paddingBottom: 12,
+    paddingBottom: 18,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   logo: {
-    fontSize: 30,
+    fontSize: 28,
     fontFamily: 'Rajdhani-Bold',
     fontWeight: 'bold',
     color: '#F5C40A',
     letterSpacing: 1.5,
-    lineHeight: 30,
+    lineHeight: 28,
   },
   logoSub: {
-    fontSize: 12,
+    fontSize: 10,
     fontFamily: 'Inter-SemiBold',
     color: 'rgba(255,255,255,0.45)',
     letterSpacing: 1.2,
@@ -427,18 +395,18 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   body: {
-    paddingTop: 8,
+    paddingTop: 10,
     paddingHorizontal: 16,
-    paddingBottom: 8,
+    paddingBottom: 10,
     flex: 1,
     justifyContent: 'space-between',
   },
   sectionLabel: {
-    fontSize: 13,
+    fontSize: 11,
     fontFamily: 'Inter-Bold',
     color: '#9CA3AF',
     letterSpacing: 1.5,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   cardsRow: {
     flexDirection: 'row',
@@ -447,12 +415,12 @@ const styles = StyleSheet.create({
   actionCard: {
     flex: 1,
     borderRadius: 18,
-    paddingTop: 12,
+    paddingTop: 22,
     paddingHorizontal: 12,
-    paddingBottom: 12,
+    paddingBottom: 22,
     justifyContent: 'space-between',
-    minHeight: 125,
-    marginHorizontal: 6,
+    minHeight: 180,
+    marginHorizontal: 8,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
@@ -482,19 +450,19 @@ const styles = StyleSheet.create({
     // Transparent to merge with gradient
   },
   cardLabel: {
-    fontSize: 28,
+    fontSize: 26,
     fontFamily: 'Rajdhani-Bold',
     fontWeight: 'bold',
     color: '#fff',
     letterSpacing: 0.5,
-    lineHeight: 28,
+    lineHeight: 26,
   },
   cardSub: {
-    fontSize: 14,
+    fontSize: 12,
     fontFamily: 'Inter-SemiBold',
     color: 'rgba(255,255,255,0.9)',
     marginTop: 5,
-    lineHeight: 18,
+    lineHeight: 16,
   },
   cardFooter: {
     flexDirection: 'row',
@@ -502,27 +470,19 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     marginTop: 12,
   },
-  timePill: {
+  actionPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 16,
     paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
   },
-  timeText: {
-    fontSize: 13,
+  actionPillText: {
+    fontSize: 10,
     fontFamily: 'Inter-Bold',
     color: '#fff',
-  },
-  arrowBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 8,
+    letterSpacing: 1,
   },
   glow: {
     position: 'absolute',
@@ -542,11 +502,13 @@ const styles = StyleSheet.create({
     width: '48%',
     backgroundColor: '#fff',
     borderRadius: 12,
-    padding: 10,
-    paddingHorizontal: 10,
+    paddingVertical: 28,
+    paddingHorizontal: 12,
+    minHeight: 100,
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    marginBottom: 6,
+    marginBottom: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
@@ -560,17 +522,17 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   metricNum: {
-    fontSize: 24,
+    fontSize: 22,
     fontFamily: 'Rajdhani-Bold',
-    lineHeight: 26,
+    lineHeight: 24,
   },
   metricArrow: {
     color: '#9CA3AF',
-    fontSize: 14,
+    fontSize: 12,
     fontFamily: 'Inter-Bold',
   },
   metricLabel: {
-    fontSize: 14,
+    fontSize: 12,
     fontFamily: 'Inter-SemiBold',
     color: '#374151',
     flexShrink: 1,
@@ -578,7 +540,7 @@ const styles = StyleSheet.create({
   progressContainer: {
     backgroundColor: '#F0F9FF',
     borderRadius: 12,
-    padding: 14,
+    padding: 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
@@ -587,20 +549,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E0F2FE',
     flexShrink: 0, // Ensure it never gets crushed on small screens
+    marginBottom: 8,
   },
   progressHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   progressTitle: {
-    fontSize: 15,
+    fontSize: 13,
     fontFamily: 'Inter-SemiBold',
     color: '#1E3A8A',
   },
   progressText: {
-    fontSize: 14,
+    fontSize: 12,
     fontFamily: 'Inter-SemiBold',
     color: '#3B82F6',
   },
@@ -618,7 +581,7 @@ const styles = StyleSheet.create({
   diagBox: {
     backgroundColor: '#FFFFFF', // Crisp clean white
     borderRadius: 14,
-    padding: 14,
+    padding: 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
@@ -626,11 +589,12 @@ const styles = StyleSheet.create({
     elevation: 2,
     borderWidth: 1,
     borderColor: '#E2E8F0', // Clean gray border
+    marginBottom: 8,
   },
   diagHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   hudDot: {
     width: 8,
@@ -645,7 +609,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   diagHead: {
-    fontSize: 14,
+    fontSize: 12,
     fontFamily: 'Inter-SemiBold',
     color: '#10B981',
     letterSpacing: 1.5,
@@ -677,9 +641,10 @@ const styles = StyleSheet.create({
   },
   benchBtn: {
     width: '100%',
-    backgroundColor: '#FFFFFF', // Clean white
+    marginTop: -8,
+    backgroundColor: '#DBE2EB', // Slightly darker slate grey
     borderRadius: 12,
-    paddingVertical: 14,
+    paddingVertical: 18,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -692,7 +657,7 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0', // Clean gray border
   },
   benchBtnText: {
-    fontSize: 14,
+    fontSize: 12,
     fontFamily: 'Inter-Bold',
     color: '#0A1F44', // Dark text for contrast against beige
     letterSpacing: 1,

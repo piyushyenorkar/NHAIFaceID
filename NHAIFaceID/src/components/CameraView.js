@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } f
 import { StyleSheet, Text, View, Dimensions, TouchableOpacity } from 'react-native';
 import { Camera, useCameraDevice, useCameraFormat, useFrameProcessor, runAsync } from 'react-native-vision-camera';
 import Svg, { Line, Circle, Text as SvgText } from 'react-native-svg';
-import { detectFaces } from 'react-native-vision-camera-face-detector';
+import { useFaceDetector } from 'react-native-vision-camera-face-detector';
 import { useRunOnJS } from 'react-native-worklets-core';
 
 const { width, height } = Dimensions.get('window');
@@ -308,6 +308,15 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
   const [cameraPosition, setCameraPosition] = useState('front');
   const device = useCameraDevice(cameraPosition);
 
+  const faceDetectionOptions = useRef({
+    performanceMode: 'fast',
+    contourMode: 'all',
+    landmarkMode: 'all',
+    classificationMode: 'all',
+  }).current;
+
+  const { detectFaces } = useFaceDetector(faceDetectionOptions);
+
   const format = useCameraFormat(device, [
     { fps: 30 },
     { videoResolution: { width: 1280, height: 720 } }
@@ -321,6 +330,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
   const exposureValue = device?.supportsExposureBias 
     ? Math.min(1.2, device.maxExposureBias ?? 1.2) 
     : undefined;
+
 
   const handleLayout = (event) => {
     const { width: lw, height: lh } = event.nativeEvent.layout;
@@ -405,12 +415,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
     runAsync(frame, () => {
       'worklet';
       // Run MLKit face detection via frame processor plugin
-      const result = detectFaces(frame, {
-        performanceMode: 'fast',
-        contourMode: 'all',
-        landmarkMode: 'all',
-        classificationMode: 'all',
-      });
+      const result = detectFaces(frame);
 
       // DIAGNOSTIC: dump raw result structure (throttled)
       if (frameCount.current % 60 === 1) {
