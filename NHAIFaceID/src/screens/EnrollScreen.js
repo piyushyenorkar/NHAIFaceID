@@ -77,6 +77,10 @@ export default function EnrollScreen({ navigation }) {
   const latestLandmarksRef = useRef(null);
   const latestBboxRef = useRef(null);
   const latestFrameInfoRef = useRef(null);
+  
+  const centerLandmarksRef = useRef(null);
+  const centerBboxRef = useRef(null);
+  const enrolledPhotoPathRef = useRef(null);
 
   const startEnrollment = () => {
     if (!employeeId.trim() || !name.trim()) {
@@ -89,6 +93,9 @@ export default function EnrollScreen({ navigation }) {
     lastDetectedRef.current = 0;
     setDetectedFace(null);
     collectedEmbeddingsRef.current = { CENTER: null, LEFT: null, RIGHT: null, UP: null, DOWN: null };
+    centerLandmarksRef.current = null;
+    centerBboxRef.current = null;
+    enrolledPhotoPathRef.current = null;
     landmarksHistoryRef.current = [];
     isProcessingStageRef.current = false;
     setEnrollStatus('SCANNING');
@@ -162,6 +169,20 @@ export default function EnrollScreen({ navigation }) {
                 }
 
                 if (currentStage === 'CENTER') {
+                  centerLandmarksRef.current = currentLandmarks;
+                  centerBboxRef.current = currentBbox;
+                  
+                  if (cameraViewRef.current) {
+                    const tempPath = await cameraViewRef.current.capturePhoto();
+                    if (tempPath) {
+                      const fileName = `enrolled_${employeeId}_${Date.now()}.jpg`;
+                      let permanentPhotoPath = `${RNFS.DocumentDirectoryPath}/${fileName}`;
+                      const sourcePath = tempPath.replace('file://', '');
+                      await RNFS.copyFile(sourcePath, permanentPhotoPath);
+                      enrolledPhotoPathRef.current = `file://${permanentPhotoPath}`;
+                    }
+                  }
+
                   setEnrollStage('LEFT');
                   setProgress(20);
                   setStatusMessage('Look Left');
@@ -185,23 +206,13 @@ export default function EnrollScreen({ navigation }) {
                   setTimeout(() => {
                     (async () => {
                       try {
-                        const finalLandmarks = latestLandmarksRef.current;
-                        const finalBbox = latestBboxRef.current;
+                        const finalLandmarks = centerLandmarksRef.current || latestLandmarksRef.current;
+                        const finalBbox = centerBboxRef.current || latestBboxRef.current;
 
                         const avgVariance = calculateLandmarksVariance(landmarksHistoryRef.current);
                         const isSpoofDetected = !bypassPoseCheck && landmarksHistoryRef.current.length >= 5 && avgVariance < 0.0006;
                         
-                        let permanentPhotoPath = null;
-                        if (cameraViewRef.current) {
-                          const tempPath = await cameraViewRef.current.capturePhoto();
-                          if (tempPath) {
-                            const fileName = `enrolled_${employeeId}_${Date.now()}.jpg`;
-                            permanentPhotoPath = `${RNFS.DocumentDirectoryPath}/${fileName}`;
-                            const sourcePath = tempPath.replace('file://', '');
-                            await RNFS.copyFile(sourcePath, permanentPhotoPath);
-                            permanentPhotoPath = `file://${permanentPhotoPath}`;
-                          }
-                        }
+                        let permanentPhotoPath = enrolledPhotoPathRef.current;
 
                         const ensemble = [
                           collectedEmbeddingsRef.current.CENTER,
