@@ -465,12 +465,21 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         const face = faces[0];
         const bounds = face.bounds || face.boundingBox || face;
         
-        // Extract raw coordinates without stretching/normalizing to 0-1
+        // Extract raw coordinates robustly for both iOS and Android MLKit payloads
+        const bX = bounds.x ?? bounds.left ?? bounds.origin?.x ?? 0;
+        const bY = bounds.y ?? bounds.top ?? bounds.origin?.y ?? 0;
+        let bW = bounds.width ?? bounds.w ?? bounds.size?.width ?? 0;
+        let bH = bounds.height ?? bounds.h ?? bounds.size?.height ?? 0;
+        
+        // Fallback if width/height is missing but right/bottom exists
+        if (bW === 0 && bounds.right !== undefined) bW = bounds.right - bX;
+        if (bH === 0 && bounds.bottom !== undefined) bH = bounds.bottom - bY;
+
         const rawBox = {
-          x: (bounds.x ?? bounds.left ?? 0),
-          y: (bounds.y ?? bounds.top ?? 0),
-          w: (bounds.width ?? bounds.w ?? 0),
-          h: (bounds.height ?? bounds.h ?? 0),
+          x: bX,
+          y: bY,
+          w: bW,
+          h: bH,
         };
 
         const faceMetrics = {
