@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Animated, SafeAreaView } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Animated, SafeAreaView, Easing } from 'react-native';
 import Svg, { Path, Ellipse, Rect } from 'react-native-svg';
 import CameraView from '../components/CameraView';
 import NHAIFaceSDK from '../NHAIFaceSDK';
@@ -125,7 +125,7 @@ export default function VerifyScreen({ navigation }) {
                   
                   setDetectedFace({ bbox: currentBbox, landmarks: currentLandmarks, color: targetColor });
                   setMatchData(result);
-                  setMatchStatus(result.status === 'MATCH' || result.status === 'LOW_CONFIDENCE' ? result.status : (result.status === 'REJECTED_SPOOF' ? 'SPOOF_REJECTED' : 'UNKNOWN'));
+                  setMatchStatus(result.status === 'MATCH' ? 'MATCHED' : (result.status === 'LOW_CONFIDENCE' ? 'LOW_CONFIDENCE' : (result.status === 'REJECTED_SPOOF' ? 'SPOOF_REJECTED' : 'UNKNOWN')));
 
                   if (result.status === 'MATCH' || result.status === 'LOW_CONFIDENCE') {
                     Animated.timing(confidenceAnim, { toValue: parseFloat(result.confidence || 0), duration: 800, useNativeDriver: false }).start();
