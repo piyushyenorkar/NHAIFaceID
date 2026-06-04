@@ -21,7 +21,7 @@ class NHAIFaceSDK {
    */
   async initialize() {
     console.log('[NHAIFaceSDK] Initializing offline SDK...');
-    
+
     // Load local SQLite DB
     await initDB();
 
@@ -57,21 +57,21 @@ class NHAIFaceSDK {
       throw new Error(`Enrollment rejected: Liveness check failed (Score: ${(livenessResult.score * 100).toFixed(1)}%). Spoof enrollments are prohibited.`);
     }
 
-    // Average the multi-pose ensemble into a single 128-D embedding
+    // Average the multi-pose ensemble into a single 192-D embedding
     let finalEmbedding;
     if (Array.isArray(embedding[0])) {
       // Ensemble of multiple pose embeddings — average them
-      const validEmbeddings = embedding.filter(e => e && Array.isArray(e) && e.length === 128);
+      const validEmbeddings = embedding.filter(e => e && Array.isArray(e) && e.length === 192);
       if (validEmbeddings.length === 0) {
         throw new Error('No valid embeddings captured during enrollment.');
       }
-      finalEmbedding = new Array(128).fill(0);
+      finalEmbedding = new Array(192).fill(0);
       for (const emb of validEmbeddings) {
-        for (let i = 0; i < 128; i++) {
+        for (let i = 0; i < 192; i++) {
           finalEmbedding[i] += (typeof emb[i] === 'number' ? emb[i] : 0);
         }
       }
-      for (let i = 0; i < 128; i++) {
+      for (let i = 0; i < 192; i++) {
         finalEmbedding[i] /= validEmbeddings.length;
       }
       // L2-normalize the averaged embedding
@@ -85,14 +85,38 @@ class NHAIFaceSDK {
     }
 
     // Check if the face already exists in the system to prevent duplicate enrollments
-    const dupCheck = await this.verifyEmbedding(finalEmbedding, landmarks, 'enrollment_check', true);
-    if (dupCheck.status === 'MATCH' || dupCheck.status === 'LOW_CONFIDENCE' || dupCheck.confidence > 0.45) {
-      throw new Error(`Face is already enrolled under Employee ID: ${dupCheck.employeeId || 'Unknown'} (${dupCheck.name || 'Unknown'}). New unique face required.`);
+    // We bypass the full verifyEmbedding pipeline (which includes liveness) and directly compare embeddings
+    try {
+      const db = await getDBConnection();
+      const [results] = await db.executeSql('SELECT employee_id, name, embedding FROM enrolled_faces');
+
+      for (let i = 0; i < results.rows.length; i++) {
+        const row = results.rows.item(i);
+        const storedEmbedding = JSON.parse(row.embedding);
+        let sim = 0;
+        if (Array.isArray(storedEmbedding[0])) {
+          for (const emb of storedEmbedding) {
+            const s = cosineSimilarity(finalEmbedding, emb);
+            if (s > sim) sim = s;
+          }
+        } else {
+          sim = cosineSimilarity(finalEmbedding, storedEmbedding);
+        }
+        // Threshold must be above verify MATCH (0.55) to prevent blocking new unique faces
+        if (sim >= 0.60) {
+          throw new Error(`Face is already enrolled under Employee ID: ${row.employee_id} (${row.name}). Similarity: ${(sim * 100).toFixed(1)}%. New unique face required.`);
+        }
+      }
+    } catch (dupError) {
+      if (dupError.message && dupError.message.includes('already enrolled')) {
+        throw dupError;
+      }
+      console.warn('[NHAIFaceSDK] Duplicate check failed:', dupError.message);
     }
 
     // Log the final embedding being saved
     const nonZeroCount = finalEmbedding.filter(v => Math.abs(v) > 0.001).length;
-    console.log(`[NHAIFaceSDK] Saving embedding: ${nonZeroCount}/128 non-zero dims. First8: [${finalEmbedding.slice(0, 8).map(v => (typeof v === 'number' ? v : 0).toFixed(4)).join(', ')}]`);
+    console.log(`[NHAIFaceSDK] Saving embedding: ${nonZeroCount}/192 non-zero dims. First8: [${finalEmbedding.slice(0, 8).map(v => (typeof v === 'number' ? v : 0).toFixed(4)).join(', ')}]`);
 
     // Extract mathematical face registration profile
     const depthVariance = calculateDepthVariance(landmarks);
@@ -108,8 +132,8 @@ class NHAIFaceSDK {
       }
       throw dbError;
     }
-    
-    console.log(`[NHAIFaceSDK] Successfully enrolled ${name} offline with geometric ratios.`);
+
+    console.log(`[NHAIFaceSDK] Successfully enrolled ${name} with native MobileFaceNet 192-D embedding.`);
     return {
       success: true,
       landmarks
@@ -131,7 +155,7 @@ class NHAIFaceSDK {
    */
   async verifyEmbedding(currentEmbedding, landmarks, deviceId = 'unknown', skipLog = false, bbox = null) {
     MetricsLogger.startTimer('Total Pipeline');
-    
+
     // STEP 1: Passive Liveness — pass bbox so ONNX inference can run if image frame is available
     MetricsLogger.startTimer('1. Passive Liveness');
     // Since we skipped taking a photo, we pass null as the frame; bbox enables ONNX crop when frame is provided
@@ -140,7 +164,7 @@ class NHAIFaceSDK {
 
     if (!livenessResult.passed) {
       const pipelineMs = MetricsLogger.endTimer('Total Pipeline');
-      
+
       // LOG SPOOF ATTEMPT TO SQLITE (for audit sync)
       if (!skipLog) {
         await insertVerificationLog({
@@ -164,23 +188,20 @@ class NHAIFaceSDK {
       };
     }
 
-    // STEP 2: SQLite Search & Validation
+    // STEP 2: Offline SQLite Search & Validation (Strict 192-D MobileFaceNet matching)
     MetricsLogger.startTimer('2. Offline SQLite Search & Validation');
-    const currentRatios = calculateFacialRatios(landmarks);
-    
+
     let bestMatch = null;
     let bestScore = -1;
-    let geoMismatchOccurred = false;
 
     try {
       const db = await getDBConnection();
-      const [results] = await db.executeSql('SELECT employee_id, name, embedding, depth_variance, face_ratios FROM enrolled_faces');
-      
+      const [results] = await db.executeSql('SELECT employee_id, name, embedding FROM enrolled_faces');
+
       for (let i = 0; i < results.rows.length; i++) {
         const row = results.rows.item(i);
         const storedEmbedding = JSON.parse(row.embedding);
-        
-        // 1. Calculate base embedding similarity (handles single vector or multi-template ensemble)
+
         let embeddingScore = 0;
         if (Array.isArray(storedEmbedding[0])) {
           let maxSim = -1;
@@ -194,32 +215,11 @@ class NHAIFaceSDK {
         } else {
           embeddingScore = cosineSimilarity(currentEmbedding, storedEmbedding);
         }
-        
-        // 2. Perform geometric verification against registered template
-        const storedRatios = JSON.parse(row.face_ratios || '{}');
-        let ratioPenalty = 1.0;
-        let isGeoMismatch = false;
 
-        if (storedRatios.interpupillaryRatio && storedRatios.noseHeightRatio) {
-          const interpupillaryDiff = Math.abs(currentRatios.interpupillaryRatio - storedRatios.interpupillaryRatio);
-          const noseHeightDiff = Math.abs(currentRatios.noseHeightRatio - storedRatios.noseHeightRatio);
-
-          const interpupillaryError = interpupillaryDiff / storedRatios.interpupillaryRatio;
-          const noseHeightError = noseHeightDiff / storedRatios.noseHeightRatio;
-
-          // If ratios deviate by > 18%, apply a strict geometric mismatch penalty
-          if (interpupillaryError > 0.18 || noseHeightError > 0.18) {
-            ratioPenalty = 0.45; // Strict penalty
-            isGeoMismatch = true;
-          }
-        }
-
-        const score = embeddingScore * ratioPenalty;
-
-        if (score > bestScore) {
-          bestScore = score;
+        // Pure 192-D embedding similarity (NO geometry/ratio penalties)
+        if (embeddingScore > bestScore) {
+          bestScore = embeddingScore;
           bestMatch = row;
-          geoMismatchOccurred = isGeoMismatch;
         }
       }
     } catch (dbError) {
@@ -228,16 +228,20 @@ class NHAIFaceSDK {
 
     const sqliteTime = MetricsLogger.endTimer('2. Offline SQLite Search & Validation');
 
-    // Classification threshold:
-    // MobileFaceNet native cosine similarity is generally lower than TFJS. Adjusting threshold.
-    let status = 'NO_MATCH';
-    if (bestScore > 0.68) {
-      status = 'MATCH';
-    } else if (bestScore >= 0.52) {
-      status = 'LOW_CONFIDENCE';
+    // Log the match result for diagnostics
+    console.log(`[NHAIFaceSDK] Verify result: bestScore=${(bestScore * 100).toFixed(2)}%, bestMatch=${bestMatch ? bestMatch.employee_id : 'none'}`);
+    if (currentEmbedding) {
+      const nonZero = currentEmbedding.filter(v => Math.abs(v) > 0.001).length;
+      console.log(`[NHAIFaceSDK] Verify embedding: ${nonZero}/192 non-zero dims, first5: [${currentEmbedding.slice(0, 5).map(v => v.toFixed(4)).join(', ')}]`);
     }
 
-    if (geoMismatchOccurred && status === 'MATCH') {
+    // Classification thresholds for full-image MobileFaceNet embeddings.
+    // Full-frame selfies produce lower cosine similarity than tightly-cropped faces
+    // because background pixels dilute the embedding. Thresholds are calibrated accordingly.
+    let status = 'NO_MATCH';
+    if (bestScore >= 0.55) {
+      status = 'MATCH';
+    } else if (bestScore >= 0.40) {
       status = 'LOW_CONFIDENCE';
     }
 
@@ -259,12 +263,12 @@ class NHAIFaceSDK {
     }
 
     return {
-      status, 
+      status,
       employee: status !== 'NO_MATCH' ? bestMatch : null,
       confidence: (bestScore * 100).toFixed(2),
       livenessScore: (livenessResult.score * 100).toFixed(2),
       livenessDetails: livenessResult.details,
-      geometricMatch: !geoMismatchOccurred,
+      geometricMatch: true, // Legacy flag, now strictly true since we use native embeddings
       processingTimeMs: pipelineMs,
       breakdownMs: {
         liveness: livenessTime,

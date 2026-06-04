@@ -1,18 +1,9 @@
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { StyleSheet, Text, View, Dimensions, TouchableOpacity } from 'react-native';
 import { Camera, useCameraDevice, useCameraFormat, useFrameProcessor, runAsync } from 'react-native-vision-camera';
-import Svg, { Line, Circle, Text as SvgText, Defs, Mask, Rect, Ellipse } from 'react-native-svg';
-import { useFaceDetector } from 'react-native-vision-camera-face-detector';
-import { Camera, useCameraDevice, useCameraFormat, useFrameProcessor, runAsync, VisionCameraProxy } from 'react-native-vision-camera';
 import Svg, { Line, Circle, Text as SvgText } from 'react-native-svg';
+import { detectFaces } from 'react-native-vision-camera-face-detector';
 import { useRunOnJS } from 'react-native-worklets-core';
-
-const faceDetectorPlugin = VisionCameraProxy.initFrameProcessorPlugin('detectFaces', {
-  performanceMode: 'fast',
-  contourMode: 'all',
-  landmarkMode: 'all',
-  classificationMode: 'all',
-});
 
 const { width, height } = Dimensions.get('window');
 
@@ -315,7 +306,6 @@ export function getFaceMesh468(box, contours = null) {
 const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace = null }, ref) => {
   const camera = useRef(null);
   const [cameraPosition, setCameraPosition] = useState('front');
-  const [localFace, setLocalFace] = useState(null);
   const device = useCameraDevice(cameraPosition);
 
   const format = useCameraFormat(device, [
@@ -327,19 +317,6 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
   const [layoutDims, setLayoutDims] = useState({ w: width, h: height });
   // Internal face tracking state — so CameraView renders its own detection overlay
   const [internalFace, setInternalFace] = useState(null);
-
-  const faceDetectorOptions = React.useMemo(() => ({
-    performanceMode: 'fast',
-    contourMode: 'all',
-    landmarkMode: 'all',
-    classificationMode: 'all',
-    autoMode: true,
-    windowWidth: width,
-    windowHeight: height,
-    cameraFacing: cameraPosition
-  }), [cameraPosition]);
-
-  const { detectFaces } = useFaceDetector(faceDetectorOptions);
 
   const exposureValue = device?.supportsExposureBias 
     ? Math.min(1.2, device.maxExposureBias ?? 1.2) 
@@ -362,9 +339,6 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         return photo.path;
       }
       return null;
-    },
-    toggleCamera() {
-      setCameraPosition(prev => prev === 'front' ? 'back' : 'front');
     }
   }));
 
@@ -378,7 +352,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
   const frameCount = useRef(0);
   const lastUIUpdateRef = useRef(0);
 
-  const handleFaceResult = (box, contours, faceMetrics = null) => {
+  const handleFaceResult = (box, contours, faceMetrics = null, frameDims = null) => {
     // Calculate the 468 simulated landmarks safely on the JS thread!
     const simulatedLandmarks = getFaceMesh468(box, contours);
     if (simulatedLandmarks && faceMetrics) {
@@ -396,7 +370,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
     const now = Date.now();
     if (now - lastUIUpdateRef.current > 150) {
       lastUIUpdateRef.current = now;
-      setInternalFace({ bbox: box, landmarks: simulatedLandmarks, color: '#00FF00' });
+      setInternalFace({ bbox: box, landmarks: simulatedLandmarks, color: '#00FF00', frameDims });
     }
     // Always notify parent callback at full speed for enrollment logic
     if (onFaceDetectedRef.current) {
@@ -431,7 +405,12 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
     runAsync(frame, () => {
       'worklet';
       // Run MLKit face detection via frame processor plugin
-      const result = faceDetectorPlugin.call(frame);
+      const result = detectFaces(frame, {
+        performanceMode: 'fast',
+        contourMode: 'all',
+        landmarkMode: 'all',
+        classificationMode: 'all',
+      });
 
       // DIAGNOSTIC: dump raw result structure (throttled)
       if (frameCount.current % 60 === 1) {
@@ -474,9 +453,13 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         }
 
         const bounds = face.bounds || face.boundingBox || face;
-        // Normalize by FRAME dimensions (camera resolution), not screen dimensions
-        const fw = frame.width || width;
-        const fh = frame.height || height;
+        const frameW = frame.width || width;
+        const frameH = frame.height || height;
+        // MLKit automatically rotates the buffer to match device orientation (portrait).
+        // Therefore, the bounding box is relative to the portrait dimensions.
+        const isPortrait = height >= width; // screen dimensions
+        const fw = isPortrait ? Math.min(frameW, frameH) : Math.max(frameW, frameH);
+        const fh = isPortrait ? Math.max(frameW, frameH) : Math.min(frameW, frameH);
         const normalizedBox = {
           x: (bounds.x ?? bounds.left ?? 0) / fw,
           y: (bounds.y ?? bounds.top ?? 0) / fh,
@@ -521,15 +504,15 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
           }
         }
 
-        // Pass both contours AND face metrics to the JS thread
-        runHandleFaceResult(normalizedBox, normalizedContours, faceMetrics);
+        // Pass both contours, face metrics, AND frame dimensions to the JS thread
+        runHandleFaceResult(normalizedBox, normalizedContours, faceMetrics, { fw, fh });
       } else {
         if (frameCount.current % 5 === 0) {
           runHandleNoFace();
         }
       }
     });
-  }, [isActive, detectFaces]);
+  }, [isActive]);
 
   const toggleCamera = () => {
     setCameraPosition(prev => prev === 'front' ? 'back' : 'front');
@@ -545,24 +528,39 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
   let activeColor = '#00FF00';
   let activeKeypoints = [];
 
-  const displayFace = detectedFace || localFace;
+  if (activeFace && activeFace.bbox) {
+    let scaleX = layoutDims.w;
+    let scaleY = layoutDims.h;
+    let offsetX = 0;
+    let offsetY = 0;
 
-  if (displayFace && displayFace.bbox) {
+    if (activeFace.frameDims) {
+      const { fw, fh } = activeFace.frameDims;
+      const scale = Math.max(layoutDims.w / fw, layoutDims.h / fh);
+      const renderedW = fw * scale;
+      const renderedH = fh * scale;
+      offsetX = (renderedW - layoutDims.w) / 2;
+      offsetY = (renderedH - layoutDims.h) / 2;
+      scaleX = renderedW;
+      scaleY = renderedH;
+    }
+
     activeBox = {
-      x: displayFace.bbox.x * layoutDims.w,
-      y: displayFace.bbox.y * layoutDims.h,
-      w: displayFace.bbox.w * layoutDims.w,
-      h: displayFace.bbox.h * layoutDims.h
+      x: activeFace.bbox.x * scaleX - offsetX,
+      y: activeFace.bbox.y * scaleY - offsetY,
+      w: activeFace.bbox.w * scaleX,
+      h: activeFace.bbox.h * scaleY
     };
-    activeColor = displayFace.color || '#00FF00';
-    activeKeypoints = (displayFace.landmarks || []).map(kp => ({
-      x: kp.x * layoutDims.w,
-      y: kp.y * layoutDims.h,
+    activeColor = activeFace.color || '#00FF00';
+    activeKeypoints = (activeFace.landmarks || []).map(kp => ({
+      x: kp.x * scaleX - offsetX,
+      y: kp.y * scaleY - offsetY,
       name: kp.name || ''
     }));
   }
 
-  const meshPoints = activeBox ? getFaceMesh468(activeBox) : [];
+  // Use the real landmarks (activeKeypoints) for mesh rendering — they come from MLKit
+  // contours and track the face precisely. No need to re-compute from the bounding box.
 
   return (
     <View style={styles.container} onLayout={handleLayout}>
@@ -579,32 +577,6 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         exposure={exposureValue}
       />
       
-      {/* Center Oval Guide Overlay */}
-      {isActive && (
-        <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
-          <Ellipse
-            cx={layoutDims.w / 2}
-            cy={layoutDims.h * 0.42}
-            rx={layoutDims.w * 0.32}
-            ry={layoutDims.h * 0.26}
-            stroke={displayFace ? '#10B981' : '#F5C40A'}
-            strokeWidth="3.5"
-            strokeDasharray="12, 6"
-            fill="none"
-          />
-
-          <Ellipse
-            cx={layoutDims.w / 2}
-            cy={layoutDims.h * 0.42}
-            rx={layoutDims.w * 0.30}
-            ry={layoutDims.h * 0.24}
-            stroke="rgba(245, 196, 10, 0.4)"
-            strokeWidth="1.5"
-            fill="none"
-          />
-        </Svg>
-      )}
-
       {activeBox && (
         <View style={[
           styles.boundingBox, 
@@ -618,7 +590,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         ]} />
       )}
 
-      {isActive && meshPoints.map((pt, idx) => (
+      {isActive && activeKeypoints.length > 0 && activeKeypoints.map((pt, idx) => (
         <View 
           key={idx}
           style={[
@@ -659,7 +631,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
 
       <View style={styles.textOverlay}>
         <Text style={[styles.guidanceText, { color: activeColor === 'gray' ? 'white' : activeColor }]}>
-          {displayFace ? 'Biometric Alignment complete' : 'Align face inside guides...'}
+          {detectedFace ? 'Biometric Alignment complete' : 'Align face inside guides...'}
         </Text>
       </View>
     </View>

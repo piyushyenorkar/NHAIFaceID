@@ -90,15 +90,6 @@ android {
         noCompress 'tflite'
     }
 
-    // Fix: react-native-vision-camera and react-native-worklets-core both ship
-    // librnworklets.so — pick the one from vision-camera (it's the correct version).
-    packagingOptions {
-        pickFirst 'lib/arm64-v8a/librnworklets.so'
-        pickFirst 'lib/x86_64/librnworklets.so'
-        pickFirst 'lib/x86/librnworklets.so'
-        pickFirst 'lib/armeabi-v7a/librnworklets.so'
-    }
-
     signingConfigs {
         debug {
             storeFile file('debug.keystore')
@@ -119,21 +110,24 @@ android {
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
     }
+    // Resolve duplicate librnworklets.so from vision-camera and worklets-core
     packagingOptions {
-        pickFirst 'lib/x86/libc++_shared.so'
-        pickFirst 'lib/x86_64/libc++_shared.so'
-        pickFirst 'lib/armeabi-v7a/libc++_shared.so'
-        pickFirst 'lib/arm64-v8a/libc++_shared.so'
         pickFirst 'lib/arm64-v8a/librnworklets.so'
+        pickFirst 'lib/armeabi-v7a/librnworklets.so'
         pickFirst 'lib/x86/librnworklets.so'
         pickFirst 'lib/x86_64/librnworklets.so'
-        pickFirst 'lib/armeabi-v7a/librnworklets.so'
     }
 }
 
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
+
+    // TensorFlow Lite for native face recognition inference (MobileFaceNet)
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")
+
+    // EXIF metadata reader — required to properly orient photos before face crop
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

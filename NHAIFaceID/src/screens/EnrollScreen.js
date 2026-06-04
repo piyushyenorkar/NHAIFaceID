@@ -1,32 +1,74 @@
-import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, SafeAreaView, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
-import Svg, { Ellipse, Rect, Polyline, Path } from 'react-native-svg';
+import React, { useState, useEffect, useRef } from 'react';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, Switch, Animated, Easing, ActivityIndicator } from 'react-native';
 import RNFS from 'react-native-fs';
 import CameraView from '../components/CameraView';
 import NHAIFaceSDK from '../NHAIFaceSDK';
 
-import { Buffer } from 'buffer';
 import { alignAndCropFace, generateEmbedding } from '../services/faceRecognition';
+import { calculateLandmarksVariance, estimatePoseAngle } from '../services/livenessDetection';
+
 
 export default function EnrollScreen({ navigation }) {
-  useLayoutEffect(() => {
-    navigation.setOptions({ headerShown: false });
-  }, [navigation]);
-
   const [employeeId, setEmployeeId] = useState('');
   const [name, setName] = useState('');
   const [enrollStatus, setEnrollStatus] = useState('IDLE'); // IDLE, SCANNING, PROCESSING, SUCCESS
   const [detectedFace, setDetectedFace] = useState(null);
-  const [focusedInput, setFocusedInput] = useState(null);
 
   // Scanning progress states
   const [progress, setProgress] = useState(0);
-  const [statusMessage, setStatusMessage] = useState('SCANNING');
-  
+  const [statusMessage, setStatusMessage] = useState('Looking for face...');
+
   const cameraViewRef = useRef(null);
   const lastDetectedRef = useRef(0);
   const progressIntervalRef = useRef(null);
   const isMountedRef = useRef(true);
+  const landmarksHistoryRef = useRef([]);
+  const boxHistoryRef = useRef([]);
+  const qualityReasonRef = useRef(null);
+
+  // Multi-pose guided enrollment states
+  const [enrollStage, setEnrollStageState] = useState('CENTER'); // CENTER, LEFT, RIGHT, UP, DOWN
+  const enrollStageRef = useRef('CENTER');
+  const setEnrollStage = (stage) => {
+    enrollStageRef.current = stage;
+    setEnrollStageState(stage);
+  };
+  const collectedEmbeddingsRef = useRef({
+    CENTER: null,
+    LEFT: null,
+    RIGHT: null,
+    UP: null,
+    DOWN: null
+  });
+  const isProcessingStageRef = useRef(false);
+
+  const [bypassPoseCheck, setBypassPoseCheckState] = useState(false);
+  const bypassPoseCheckRef = useRef(false);
+  const toggleBypassPoseCheck = (val) => {
+    bypassPoseCheckRef.current = val;
+    setBypassPoseCheckState(val);
+  };
+
+  const forceCaptureStage = () => {
+    if (enrollStatus !== 'SCANNING') return;
+    if (!latestLandmarksRef.current || !latestBboxRef.current) {
+      Alert.alert('No Face Detected', 'Please align a face in the camera view before capturing.');
+      return;
+    }
+
+    // Clear quality warning/reason to force capture
+    qualityReasonRef.current = null;
+
+    const currentStage = enrollStageRef.current;
+    let targetProgress = 20;
+    if (currentStage === 'CENTER') targetProgress = 20;
+    else if (currentStage === 'LEFT') targetProgress = 40;
+    else if (currentStage === 'RIGHT') targetProgress = 60;
+    else if (currentStage === 'UP') targetProgress = 80;
+    else if (currentStage === 'DOWN') targetProgress = 100;
+
+    setProgress(targetProgress);
+  };
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -34,6 +76,46 @@ export default function EnrollScreen({ navigation }) {
       isMountedRef.current = false;
     };
   }, []);
+
+  // Animated spinner for processing
+  const spinAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (enrollStatus === 'PROCESSING') {
+      Animated.loop(
+        Animated.timing(spinAnim, { toValue: 1, duration: 1200, easing: Easing.linear, useNativeDriver: true })
+      ).start();
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.08, duration: 600, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+        ])
+      ).start();
+    } else {
+      spinAnim.setValue(0);
+      pulseAnim.setValue(1);
+    }
+  }, [enrollStatus]);
+
+  const spinInterpolate = spinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
+  // Success screen animations
+  const successScale = useRef(new Animated.Value(0)).current;
+  const successOpacity = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (enrollStatus === 'SUCCESS') {
+      Animated.parallel([
+        Animated.spring(successScale, { toValue: 1, friction: 5, tension: 80, useNativeDriver: true }),
+        Animated.timing(successOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
+      ]).start();
+    } else {
+      successScale.setValue(0);
+      successOpacity.setValue(0);
+    }
+  }, [enrollStatus]);
 
   const latestEmbeddingRef = useRef(null);
   const latestLandmarksRef = useRef(null);
@@ -45,29 +127,144 @@ export default function EnrollScreen({ navigation }) {
       return;
     }
     setProgress(0);
-    setStatusMessage('SCANNING');
+    setEnrollStage('CENTER');
+    toggleBypassPoseCheck(false); // Reset bypass mode
+    collectedEmbeddingsRef.current = { CENTER: null, LEFT: null, RIGHT: null, UP: null, DOWN: null };
+    setStatusMessage('Align face inside guide oval...');
     lastDetectedRef.current = 0;
     setDetectedFace(null);
     setEnrollStatus('SCANNING');
   };
 
+  // Called 30 times a second from CameraView
   const handleFaceDetected = (bbox, landmarks, embedding) => {
     if (enrollStatus !== 'SCANNING') return;
-    
+
     if (bbox && landmarks) {
-      const isCentered = true; 
+      const isCentered = true;
+
       if (isCentered) {
         lastDetectedRef.current = Date.now();
         latestLandmarksRef.current = landmarks;
         latestBboxRef.current = bbox;
+
         if (embedding) {
           latestEmbeddingRef.current = embedding;
+        }
+
+        // Push relative landmarks to history
+        if (bbox.w > 0 && bbox.h > 0) {
+          const relativeLandmarks = landmarks.map(pt => ({
+            x: (pt.x - bbox.x) / bbox.w,
+            y: (pt.y - bbox.y) / bbox.h
+          }));
+          // Propagate the isSimulated flag so variance check knows if this frame is real data
+          relativeLandmarks.isSimulated = landmarks.isSimulated === true;
+          landmarksHistoryRef.current.push(relativeLandmarks);
+          if (landmarksHistoryRef.current.length > 20) {
+            landmarksHistoryRef.current.shift();
+          }
+        }
+
+        // Bounding Box motion stability check
+        boxHistoryRef.current.push({ x: bbox.x, y: bbox.y, w: bbox.w, h: bbox.h });
+        if (boxHistoryRef.current.length > 5) {
+          boxHistoryRef.current.shift();
+        }
+
+        let isMovingTooFast = false;
+        if (boxHistoryRef.current.length >= 3) {
+          let totalDiff = 0;
+          const history = boxHistoryRef.current;
+          for (let i = 1; i < history.length; i++) {
+            const prevCenter = { x: history[i - 1].x + history[i - 1].w / 2, y: history[i - 1].y + history[i - 1].h / 2 };
+            const currCenter = { x: history[i].x + history[i].w / 2, y: history[i].y + history[i].h / 2 };
+            totalDiff += Math.sqrt(Math.pow(currCenter.x - prevCenter.x, 2) + Math.pow(currCenter.y - prevCenter.y, 2));
+          }
+          const avgDiff = totalDiff / (history.length - 1);
+          if (avgDiff >= 0.035) {
+            isMovingTooFast = true;
+          }
+        }
+
+        // Real-time passive spoof liveness check using landmark variance
+        let isSpoofDetected = false;
+        if (landmarksHistoryRef.current.length >= 10) {
+          const hasSimulatedInHistory = landmarksHistoryRef.current.some(f => f.isSimulated === true);
+          if (!hasSimulatedInHistory) {
+            const avgVariance = calculateLandmarksVariance(landmarksHistoryRef.current);
+            console.log('[EnrollScreen] avgVariance:', avgVariance);
+            if (avgVariance < 0.00012) {
+              isSpoofDetected = true;
+            }
+          } else {
+            console.log('[EnrollScreen] Simulated landmarks in history — skipping variance spoof check.');
+          }
+        }
+
+        // Active Guided Stage Pose Verification
+        const detectedPose = estimatePoseAngle(landmarks);
+        if (!handleFaceDetected._poseLogCount) handleFaceDetected._poseLogCount = 0;
+        if (handleFaceDetected._poseLogCount++ % 30 === 0) {
+          console.log(`[Enroll] Stage: ${enrollStageRef.current} | Detected: ${detectedPose} | yaw=${(landmarks.yawAngle || 0).toFixed(1)} pitch=${(landmarks.pitchAngle || 0).toFixed(1)}`);
+        }
+        let poseMatchesStage = false;
+        const yaw = landmarks.yawAngle || 0;
+        const pitch = landmarks.pitchAngle || 0;
+        if (bypassPoseCheckRef.current) {
+          poseMatchesStage = true;
+        } else {
+          const stage = enrollStageRef.current;
+          // CENTER: face looking roughly straight ahead
+          if (stage === 'CENTER' && Math.abs(yaw) <= 15 && Math.abs(pitch) <= 12) {
+            poseMatchesStage = true;
+          }
+          // LEFT/RIGHT: any significant horizontal turn (front camera can mirror, so accept either direction)
+          if (stage === 'LEFT' && Math.abs(yaw) > 8) {
+            poseMatchesStage = true;
+          }
+          if (stage === 'RIGHT' && Math.abs(yaw) > 8 && Math.sign(yaw) !== Math.sign(collectedEmbeddingsRef.current._lastYaw || yaw)) {
+            // Accept the opposite horizontal direction from LEFT capture
+            poseMatchesStage = true;
+          }
+          // If RIGHT can't distinguish direction, just accept any horizontal turn
+          if (stage === 'RIGHT' && Math.abs(yaw) > 8) {
+            poseMatchesStage = true;
+          }
+          // UP/DOWN: any significant vertical tilt (lowered threshold for easier trigger)
+          if (stage === 'UP' && Math.abs(pitch) > 4) {
+            poseMatchesStage = true;
+          }
+          if (stage === 'DOWN' && Math.abs(pitch) > 4) {
+            poseMatchesStage = true;
+          }
+        }
+
+        // For non-CENTER stages, skip motion/spoof checks since head movement is EXPECTED
+        const currentStage = enrollStageRef.current;
+        if (currentStage === 'CENTER') {
+          if (isSpoofDetected) {
+            qualityReasonRef.current = 'spoof';
+          } else if (isMovingTooFast) {
+            qualityReasonRef.current = 'blurry';
+          } else if (!poseMatchesStage) {
+            qualityReasonRef.current = 'bad_angle';
+          } else {
+            qualityReasonRef.current = null;
+          }
+        } else {
+          // For LEFT/RIGHT/UP/DOWN: only check pose match, skip motion/spoof
+          if (!poseMatchesStage) {
+            qualityReasonRef.current = 'bad_angle';
+          } else {
+            qualityReasonRef.current = null;
+          }
         }
       }
     }
   };
 
-  // Progress scanning loop (2 seconds total)
+  // Progress scanning loop
   useEffect(() => {
     if (enrollStatus !== 'SCANNING') {
       if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
@@ -75,92 +272,196 @@ export default function EnrollScreen({ navigation }) {
     }
 
     lastDetectedRef.current = 0;
+    landmarksHistoryRef.current = []; // Clear history at start of scan
+    boxHistoryRef.current = [];
+    qualityReasonRef.current = null;
+    isProcessingStageRef.current = false;
+
     progressIntervalRef.current = setInterval(async () => {
+      if (isProcessingStageRef.current) return;
+
       const faceDetected = Date.now() - lastDetectedRef.current < 800;
 
       if (faceDetected) {
         setProgress(prev => {
-          const nextProgress = prev + 5;
-          
-          if (nextProgress < 35) {
-            setStatusMessage(`SCANNING`);
-          } else if (nextProgress < 70) {
-            setStatusMessage(`ANALYZING`);
-          } else if (nextProgress < 100) {
-            setStatusMessage(`EXTRACTING`);
-          } else if (nextProgress >= 100) {
-            clearInterval(progressIntervalRef.current);
-            if (isMountedRef.current) setEnrollStatus('PROCESSING');
-            
-            // Defer execution by 100ms to allow React to paint the PROCESSING state
-            setTimeout(() => {
-              (async () => {
+          let baseline = 0;
+          let target = 33;
+          const currentStage = enrollStageRef.current;
+          if (currentStage === 'CENTER') { baseline = 0; target = 33; }
+          else if (currentStage === 'LEFT') { baseline = 33; target = 66; }
+          else if (currentStage === 'RIGHT') { baseline = 66; target = 100; }
+
+          if (qualityReasonRef.current) {
+            if (qualityReasonRef.current === 'spoof') {
+              setStatusMessage('⚠️ SPOOF DETECTED — Use live face');
+            } else if (qualityReasonRef.current === 'blurry') {
+              setStatusMessage('📷 Hold still — camera adjusting');
+            } else {
+              if (currentStage === 'CENTER') setStatusMessage('👁 Look straight at camera');
+              else if (currentStage === 'LEFT') setStatusMessage('👁 Turn your head slowly left');
+              else if (currentStage === 'RIGHT') setStatusMessage('👁 Turn your head slowly right');
+              else if (currentStage === 'UP') setStatusMessage('👁 Tilt your head slightly up');
+              else if (currentStage === 'DOWN') setStatusMessage('👁 Tilt your head slightly down');
+            }
+            // For CENTER: decay progress. For others: just pause (don't decay) to avoid flicker
+            if (currentStage === 'CENTER') {
+              return Math.max(baseline, prev - 2);
+            }
+            return prev; // Pause — don't go backwards
+          }
+
+          const nextProgress = prev + 3; // Takes 1 second to lock each 33% stage segment
+
+          if (currentStage === 'CENTER') {
+            setStatusMessage(`Aligning center pose: ${Math.round((nextProgress - baseline) / 33 * 100)}%`);
+          } else if (currentStage === 'LEFT') {
+            setStatusMessage(`Registering left yaw profile: ${Math.round((nextProgress - baseline) / 33 * 100)}%`);
+          } else if (currentStage === 'RIGHT') {
+            setStatusMessage(`Registering right yaw profile: ${Math.round((nextProgress - baseline) / 34 * 100)}%`);
+          }
+
+          if (nextProgress >= target) {
+            isProcessingStageRef.current = true;
+            setStatusMessage(`Processing ${currentStage.toLowerCase()} profile...`);
+
+            // Execute async capture
+            (async () => {
+              try {
+                const currentLandmarks = latestLandmarksRef.current;
+                const currentBbox = latestBboxRef.current;
+
+                if (!currentLandmarks || !currentBbox) {
+                  isProcessingStageRef.current = false;
+                  return;
+                }
+
+                let embedding = null;
+
+                // REAL face recognition: capture photo → native TFLite → 192-D embedding
+                // NO FALLBACK — if photo fails, we retry, not fake it
                 try {
-                  const currentLandmarks = latestLandmarksRef.current;
-                  const currentBbox = latestBboxRef.current;
-                  
-                  // Always capture a high-res photo for the user profile list
-                  let permanentPhotoPath = null;
                   if (cameraViewRef.current) {
-                    const tempPath = await cameraViewRef.current.capturePhoto();
-                    if (tempPath) {
-                      const fileName = `enrolled_${employeeId}_${Date.now()}.jpg`;
-                      permanentPhotoPath = `${RNFS.DocumentDirectoryPath}/${fileName}`;
-                      const sourcePath = tempPath.replace('file://', '');
-                      await RNFS.copyFile(sourcePath, permanentPhotoPath);
-                      permanentPhotoPath = `file://${permanentPhotoPath}`;
+                    const photoPromise = cameraViewRef.current.capturePhoto();
+                    const timeoutPromise = new Promise((_, reject) =>
+                      setTimeout(() => reject(new Error('Photo capture timeout')), 5000)
+                    );
+                    const photoPath = await Promise.race([photoPromise, timeoutPromise]);
+                    if (photoPath) {
+                      const cropped = await alignAndCropFace({ path: photoPath }, currentBbox, currentLandmarks);
+                      embedding = await generateEmbedding(cropped);
                     }
                   }
+                } catch (photoErr) {
+                  console.error('[EnrollScreen] Photo capture/embedding error:', photoErr.message);
+                }
 
-                  let currentEmbedding = latestEmbeddingRef.current;
-                  if (!currentEmbedding && permanentPhotoPath) {
-                    const cropped = await alignAndCropFace({ path: permanentPhotoPath }, currentBbox, currentLandmarks);
-                    currentEmbedding = await generateEmbedding(cropped);
-                  }
+                if (!embedding) {
+                  console.warn('[EnrollScreen] Stage capture failed — no real embedding. Will retry.');
+                  setStatusMessage('📷 Capture failed — hold still and try again');
+                  isProcessingStageRef.current = false;
+                  return; // Don't advance — retry this stage
+                }
 
-                  if (!currentEmbedding) {
-                    Alert.alert('Error', 'Could not extract valid 3D facial embedding. Please try again in better lighting.');
-                    setEnrollStatus('IDLE');
-                    return;
-                  }
+                collectedEmbeddingsRef.current[currentStage] = embedding;
 
-                  const result = await NHAIFaceSDK.enrollEmbedding(employeeId, name, currentEmbedding, currentLandmarks, permanentPhotoPath);
-                  
-                  if (isMountedRef.current) {
-                    setDetectedFace({
-                      bbox: currentBbox,
-                      landmarks: currentLandmarks,
-                      color: '#10B981'
-                    });
-                    
-                    setEnrollStatus('SUCCESS');
-                    Alert.alert('Success', `Employee ${name} (${employeeId}) has been successfully enrolled offline.`);
-                    setTimeout(() => {
-                      if (isMountedRef.current) {
-                        if (navigation.canGoBack()) {
-                          navigation.goBack();
-                        } else {
-                          navigation.navigate('Home');
+                if (currentStage === 'CENTER') {
+                  setEnrollStage('LEFT');
+                  setProgress(33);
+                } else if (currentStage === 'LEFT') {
+                  setEnrollStage('RIGHT');
+                  setProgress(66);
+                } else if (currentStage === 'RIGHT') {
+                  setProgress(100);
+                  clearInterval(progressIntervalRef.current);
+                  if (isMountedRef.current) setEnrollStatus('PROCESSING');
+
+                  setTimeout(() => {
+                    (async () => {
+                      try {
+                        const finalLandmarks = latestLandmarksRef.current;
+                        const finalBbox = latestBboxRef.current;
+
+                        const avgVariance = calculateLandmarksVariance(landmarksHistoryRef.current);
+                        console.log('[EnrollScreen] Landmark variance:', avgVariance);
+                        const hasSimulatedInHistory = landmarksHistoryRef.current.some(f => f.isSimulated === true);
+                        // Only flag spoof via variance if all frames in history are real MLKit data
+                        const isSpoofDetected = !hasSimulatedInHistory &&
+                          landmarksHistoryRef.current.length >= 10 && avgVariance < 0.00012;
+
+                        let permanentPhotoPath = null;
+                        if (cameraViewRef.current) {
+                          const tempPath = await cameraViewRef.current.capturePhoto();
+                          if (tempPath) {
+                            const fileName = `enrolled_${employeeId}_${Date.now()}.jpg`;
+                            permanentPhotoPath = `${RNFS.DocumentDirectoryPath}/${fileName}`;
+                            const sourcePath = tempPath.replace('file://', '');
+                            await RNFS.copyFile(sourcePath, permanentPhotoPath);
+                            permanentPhotoPath = `file://${permanentPhotoPath}`;
+                          }
+                        }
+
+                        const ensemble = [
+                          collectedEmbeddingsRef.current.CENTER,
+                          collectedEmbeddingsRef.current.LEFT,
+                          collectedEmbeddingsRef.current.RIGHT
+                        ];
+
+                        if (finalLandmarks) {
+                          finalLandmarks.isSpoof = isSpoofDetected;
+                        }
+
+                        const result = await NHAIFaceSDK.enrollEmbedding(
+                          employeeId,
+                          name,
+                          ensemble,
+                          finalLandmarks,
+                          permanentPhotoPath,
+                          finalBbox
+                        );
+
+                        if (isMountedRef.current) {
+                          setDetectedFace({
+                            bbox: finalBbox,
+                            landmarks: finalLandmarks,
+                            color: '#28a745'
+                          });
+
+                          setEnrollStatus('SUCCESS');
+                          setTimeout(() => {
+                            if (isMountedRef.current) {
+                              if (navigation.canGoBack()) {
+                                navigation.goBack();
+                              } else {
+                                navigation.navigate('Home');
+                              }
+                            }
+                          }, 2500);
+                        }
+                      } catch (error) {
+                        console.error('[EnrollScreen]', error);
+                        if (isMountedRef.current) {
+                          setEnrollStatus('IDLE');
+                          Alert.alert('Enrollment Failed', error.message || 'Face enrollment failed due to spoofing or poor lighting.');
                         }
                       }
-                    }, 2500);
-                  }
-                } catch (error) {
-                  console.error('[EnrollScreen]', error);
-                  if (isMountedRef.current) {
-                    setEnrollStatus('IDLE');
-                    Alert.alert('Enrollment Failed', error.message || 'Face enrollment failed due to spoofing or poor lighting.');
-                  }
+                    })();
+                  }, 100);
                 }
-              })();
-            }, 100);
-            return 100;
+
+                isProcessingStageRef.current = false;
+              } catch (err) {
+                console.error('[EnrollScreen] Stage capture error:', err);
+                isProcessingStageRef.current = false;
+              }
+            })();
+
+            return prev;
           }
           return nextProgress;
         });
       } else {
         setProgress(0);
-        setStatusMessage('SCANNING');
+        setStatusMessage('Align face inside guide oval...');
       }
     }, 100);
 
@@ -169,546 +470,560 @@ export default function EnrollScreen({ navigation }) {
     };
   }, [enrollStatus, employeeId, name, navigation]);
 
-  if (enrollStatus === 'SUCCESS') {
-    return (
-      <View style={styles.successContainer}>
-        <View style={styles.successCard}>
-          <View style={styles.successIconCircle}>
-            <Text style={styles.successIcon}>✓</Text>
-          </View>
-          <Text style={styles.successTitle}>Enrollment Successful</Text>
-          
-          <View style={styles.successDetailCard}>
-            <Text style={styles.successText}>Name: <Text style={styles.successValue}>{name}</Text></Text>
-            <Text style={styles.successText}>Employee ID: <Text style={styles.successValue}>{employeeId}</Text></Text>
-            <Text style={styles.timestamp}>Registered locally on: {new Date().toLocaleDateString()} {new Date().toLocaleTimeString()}</Text>
-          </View>
-
-          <TouchableOpacity
-            style={styles.doneBtn}
-            onPress={() => navigation.navigate('Home')}
-          >
-            <Text style={styles.doneBtnText}>Return Home</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
+  // ─── POSE STAGE ICONS (Reduced to 3 poses) ────────────────────────────────
+  const STAGES = ['CENTER', 'LEFT', 'RIGHT'];
+  const STAGE_ICONS = { CENTER: '🎯', LEFT: '←', RIGHT: '→' };
+  const STAGE_LABELS = { CENTER: 'Center', LEFT: 'Left', RIGHT: 'Right' };
 
   return (
-    <View style={styles.container}>
-      {/* Full Screen Camera Background */}
+    <View style={styles.cameraContainer}>
       <View style={styles.cameraWrapper}>
-        <CameraView 
+        <CameraView
           ref={cameraViewRef}
-          isActive={enrollStatus !== 'SUCCESS'}
-          onFaceDetected={handleFaceDetected}
+          isActive={true} // Always active so it shows beautifully in the background
+          onFaceDetected={enrollStatus === 'SCANNING' ? handleFaceDetected : undefined}
           detectedFace={detectedFace}
         />
-      </View>
 
-      {/* Dim overlay when form is shown */}
-      {enrollStatus === 'IDLE' && <View style={styles.backgroundOverlay} />}
+        {/* ─── IDLE (FORM) OVERLAY ──────────────────────────────────────── */}
+        {enrollStatus === 'IDLE' && (
+          <View style={styles.modalOverlay}>
+            <View style={styles.idleHeader}>
+              <TouchableOpacity onPress={() => navigation.goBack()} style={styles.idleBackBtn}>
+                <Text style={styles.idleBackArrow}>‹</Text>
+              </TouchableOpacity>
+              <View>
+                <Text style={styles.idleHeaderTitle}>New Enrollment</Text>
+                <Text style={styles.idleHeaderSub}>NHAI DATALAKE 3.0</Text>
+              </View>
+            </View>
 
-      {/* Top Input Form - absolute glass card */}
-      {enrollStatus === 'IDLE' && (
-        <View style={styles.formContainer}>
-          <Text style={styles.formTitle}>Biometric Enrollment</Text>
-          <Text style={styles.formSubtitle}>Offline Face ID Registration</Text>
+            <View style={styles.formContent}>
+              <View style={styles.glassCard}>
+                <View style={styles.iconCircle}>
+                  <Text style={styles.iconText}>👤</Text>
+                </View>
+                <Text style={styles.formTitle}>Employee Details</Text>
+                <Text style={styles.formSubtitle}>Enter credentials to begin biometric scan</Text>
 
-          <View style={styles.inputWrapper}>
-            <Text style={styles.inputLabel}>Employee ID</Text>
-            <TextInput
-              style={[styles.input, focusedInput === 'id' && styles.inputFocused]}
-              placeholder="e.g. NHAI-2026-904"
-              placeholderTextColor="rgba(255, 255, 255, 0.4)"
-              value={employeeId}
-              onChangeText={setEmployeeId}
-              editable={enrollStatus === 'IDLE'}
-              onFocus={() => setFocusedInput('id')}
-              onBlur={() => setFocusedInput(null)}
-            />
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>EMPLOYEE ID</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. NHAI-0042"
+                    placeholderTextColor="#9CA3AF"
+                    value={employeeId}
+                    onChangeText={setEmployeeId}
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>FULL NAME</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. Ravi Kumar"
+                    placeholderTextColor="#9CA3AF"
+                    value={name}
+                    onChangeText={setName}
+                  />
+                </View>
+
+                <TouchableOpacity style={styles.startBtn} onPress={startEnrollment} activeOpacity={0.85}>
+                  <Text style={styles.startBtnText}>Save & Scan Face</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
+        )}
 
-          <View style={styles.inputWrapper}>
-            <Text style={styles.inputLabel}>Full Name</Text>
-            <TextInput
-              style={[styles.input, focusedInput === 'name' && styles.inputFocused]}
-              placeholder="e.g. Piyush Yenorkar"
-              placeholderTextColor="rgba(255, 255, 255, 0.4)"
-              value={name}
-              onChangeText={setName}
-              editable={enrollStatus === 'IDLE'}
-              onFocus={() => setFocusedInput('name')}
-              onBlur={() => setFocusedInput(null)}
-            />
+        {/* ─── SUCCESS OVERLAY ──────────────────────────────────────── */}
+        {enrollStatus === 'SUCCESS' && (
+          <View style={styles.modalOverlay}>
+            <View style={styles.formContent}>
+              <Animated.View style={[styles.glassCard, { opacity: successOpacity, transform: [{ scale: successScale }] }]}>
+                <View style={styles.successCheckCircle}>
+                  <Text style={styles.successCheckMark}>✓</Text>
+                </View>
+                <Text style={styles.successTitle}>Successfully Enrolled</Text>
+
+                <View style={styles.successInfoRow}>
+                  <Text style={styles.successLabel}>Name</Text>
+                  <Text style={styles.successValue}>{name}</Text>
+                </View>
+                <View style={styles.successDivider} />
+                <View style={styles.successInfoRow}>
+                  <Text style={styles.successLabel}>Employee ID</Text>
+                  <Text style={styles.successValue}>{employeeId}</Text>
+                </View>
+
+                <TouchableOpacity style={styles.startBtn} onPress={() => navigation.navigate('Home')}>
+                  <Text style={styles.startBtnText}>Done</Text>
+                </TouchableOpacity>
+              </Animated.View>
+            </View>
           </View>
+        )}
 
-          <TouchableOpacity style={styles.startBtn} onPress={startEnrollment}>
-            <Text style={styles.startBtnText}>START ENROLLMENT</Text>
+        {/* Floating Back Button over Camera */}
+        {enrollStatus === 'SCANNING' && (
+          <TouchableOpacity style={styles.floatingBackBtn} onPress={() => setEnrollStatus('IDLE')}>
+            <Text style={styles.floatingBackArrow}>✕</Text>
           </TouchableOpacity>
-        </View>
-      )}
+        )}
 
-      {/* Developer Options for scanning */}
-      {enrollStatus === 'SCANNING' && (
-        <View style={styles.simulatorHeader}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Text style={styles.simulatorLabelDev}>Bypass Pose</Text>
-            <Switch
-              value={bypassPoseCheck}
-              onValueChange={toggleBypassPoseCheck}
-              trackColor={{ false: '#334155', true: '#10B981' }}
-              thumbColor={bypassPoseCheck ? '#FFFFFF' : '#94A3B8'}
-            />
+        {/* Dev Options */}
+        {enrollStatus === 'SCANNING' && (
+          <View style={styles.floatingDevBar}>
+            <View style={styles.devToggle}>
+              <Text style={styles.devLabel}>Bypass Pose</Text>
+              <Switch
+                value={bypassPoseCheck}
+                onValueChange={toggleBypassPoseCheck}
+                trackColor={{ false: 'rgba(255,255,255,0.15)', true: '#10B981' }}
+                thumbColor="#fff"
+              />
+            </View>
+            <TouchableOpacity style={styles.forceCaptureBtn} onPress={forceCaptureStage}>
+              <Text style={styles.forceCaptureBtnText}>Force {enrollStage}</Text>
+            </TouchableOpacity>
           </View>
-        </View>
-      )}
+        )}
 
-      {/* Progress Overlay */}
-      {enrollStatus === 'SCANNING' && (
-        <View style={styles.progressOverlay}>
-          <Text style={styles.progressText}>
-            {statusMessage}
-          </Text>
-          <View style={styles.progressBarTrack}>
-            <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
-          </View>
-          
-          {/* Visual 5-Pose Guidance Stepper */}
-          <View style={styles.stepperContainer}>
-            <View style={styles.stepItem}>
-              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'CENTER' ? '#F5C40A' : collectedEmbeddingsRef.current.CENTER ? '#10B981' : '#64748B' }]} />
-              <Text style={[styles.stepText, { color: enrollStage === 'CENTER' ? '#F5C40A' : collectedEmbeddingsRef.current.CENTER ? '#10B981' : '#64748B' }]}>
-                Center
-              </Text>
-            </View>
-            <View style={styles.stepItem}>
-              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'LEFT' ? '#F5C40A' : collectedEmbeddingsRef.current.LEFT ? '#10B981' : '#64748B' }]} />
-              <Text style={[styles.stepText, { color: enrollStage === 'LEFT' ? '#F5C40A' : collectedEmbeddingsRef.current.LEFT ? '#10B981' : '#64748B' }]}>
-                Left
-              </Text>
-            </View>
-            <View style={styles.stepItem}>
-              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'RIGHT' ? '#F5C40A' : collectedEmbeddingsRef.current.RIGHT ? '#10B981' : '#64748B' }]} />
-              <Text style={[styles.stepText, { color: enrollStage === 'RIGHT' ? '#F5C40A' : collectedEmbeddingsRef.current.RIGHT ? '#10B981' : '#64748B' }]}>
-                Right
-              </Text>
-            </View>
-            <View style={styles.stepItem}>
-              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'UP' ? '#F5C40A' : collectedEmbeddingsRef.current.UP ? '#10B981' : '#64748B' }]} />
-              <Text style={[styles.stepText, { color: enrollStage === 'UP' ? '#F5C40A' : collectedEmbeddingsRef.current.UP ? '#10B981' : '#64748B' }]}>
-                Up
-              </Text>
-            </View>
-            <View style={styles.stepItem}>
-              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'DOWN' ? '#F5C40A' : collectedEmbeddingsRef.current.DOWN ? '#10B981' : '#64748B' }]} />
-              <Text style={[styles.stepText, { color: enrollStage === 'DOWN' ? '#F5C40A' : collectedEmbeddingsRef.current.DOWN ? '#10B981' : '#64748B' }]}>
-                Down
-              </Text>
+        {/* Scanning Overlay (Glassmorphism) */}
+        {enrollStatus === 'SCANNING' && (
+          <View style={styles.progressOverlay}>
+            <View style={styles.glassOverlayCard}>
+              <Text style={styles.progressStatusText}>{statusMessage}</Text>
+
+              <View style={styles.progressBarTrack}>
+                <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
+              </View>
+
+              <View style={styles.poseStepper}>
+                {STAGES.map((stage) => {
+                  const isActive = enrollStage === stage;
+                  const isDone = !!collectedEmbeddingsRef.current[stage];
+                  return (
+                    <View key={stage} style={styles.poseStep}>
+                      <View style={[
+                        styles.poseIcon,
+                        isDone && styles.poseIconDone,
+                        isActive && styles.poseIconActive,
+                      ]}>
+                        <Text style={[
+                          styles.poseIconText,
+                          isDone && { color: '#fff' },
+                          isActive && { color: '#fff' },
+                        ]}>
+                          {isDone ? '✓' : STAGE_ICONS[stage]}
+                        </Text>
+                      </View>
+                      <Text style={[
+                        styles.poseLabel,
+                        isActive && { color: '#2563EB', fontWeight: 'bold' },
+                        isDone && { color: '#10B981' },
+                      ]}>
+                        {STAGE_LABELS[stage]}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
             </View>
           </View>
+        )}
 
-          <Text style={styles.instructionText}>
-            Rotate head slowly through center, left, right, up, down profiles.
-          </Text>
-        </View>
-      )}
-
-      {/* Processing Overlay */}
-      {enrollStatus === 'PROCESSING' && (
-        <View style={styles.processingOverlay}>
-          <Text style={styles.processingTitle}>⚙️ Biometric Audit in Progress</Text>
-          <Text style={styles.processingText}>
-            Analyzing passive liveness cues & extracting offline face template.
-          </Text>
-          <Text style={styles.processingSubtext}>
-            {Math.round(progress)}% Complete - Do not move
-          </Text>
-
-          {/* Show physical geometric distances on screen if capturing */}
-          {latestEmbeddingRef.current && (
-            <View style={{marginTop: 14, backgroundColor: 'rgba(0,0,0,0.4)', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(245, 196, 10, 0.2)'}}>
-              <Text style={{color: '#10B981', fontSize: 10, fontFamily: 'monospace', fontWeight: 'bold'}}>
-                CAPTURED GEOMETRY (First 8 Distances):
-              </Text>
-              <Text style={{color: '#10B981', fontSize: 10, fontFamily: 'monospace', marginTop: 4}}>
-                [{latestEmbeddingRef.current.slice(0, 8).map(v => v.toFixed(3)).join(', ')} ...]
-              </Text>
+        {/* Processing Overlay */}
+        {enrollStatus === 'PROCESSING' && (
+          <View style={styles.processingOverlay}>
+            <Animated.View style={[styles.processingSpinnerWrap, { transform: [{ scale: pulseAnim }] }]}>
+              <Animated.View style={{ transform: [{ rotate: spinInterpolate }] }}>
+                <View style={styles.spinnerRing} />
+              </Animated.View>
+              <View style={styles.spinnerCenter}>
+                <Text style={styles.spinnerIcon}>🧬</Text>
+              </View>
+            </Animated.View>
+            <Text style={styles.processingTitle}>Biometric Audit</Text>
+            <Text style={styles.processingText}>
+              Analyzing liveness cues & extracting neural face template
+            </Text>
+            <View style={styles.processingProgressRow}>
+              <ActivityIndicator size="small" color="#2563EB" />
+              <Text style={styles.processingSubtext}>{Math.round(progress)}% — Do not move</Text>
             </View>
-          )}
-        </View>
-      )}
+          </View>
+        )}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#0A1F44',
-  },
-  container: {
-    flex: 1,
-    backgroundColor: '#0A0F1D', // Premium Slate Dark background
-  },
-  cameraWrapper: {
+  // ─── IDLE (FORM) LAYOUT ────────────────────────────────
+  modalOverlay: {
     ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(249, 250, 251, 0.85)', // Light translucent overlay over camera
+    zIndex: 20,
   },
-  backgroundOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(10, 15, 30, 0.65)', // Dimming camera slightly for form input
+  idleHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 50,
+    paddingBottom: 20,
+    paddingHorizontal: 24,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderColor: '#E5E7EB',
   },
-  formContainer: {
-    position: 'absolute',
-    top: '20%',
-    left: 20,
-    right: 20,
-    backgroundColor: 'rgba(15, 23, 42, 0.88)', // Dark Glassmorphic container
-    borderRadius: 24,
+  idleBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  idleBackArrow: {
+    color: '#111827',
+    fontSize: 28,
+    fontWeight: '300',
+    marginTop: -4,
+  },
+  idleHeaderTitle: {
+    color: '#111827',
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  idleHeaderSub: {
+    color: '#6B7280',
+    fontSize: 12,
+    letterSpacing: 1,
+    marginTop: 2,
+  },
+  formContent: {
+    flex: 1,
     padding: 24,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    shadowColor: '#F5C40A',
+    justifyContent: 'center',
+  },
+  glassCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 32,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.05,
     shadowRadius: 20,
     elevation: 8,
-    zIndex: 10,
+    alignItems: 'center',
+  },
+  iconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  iconText: {
+    fontSize: 32,
   },
   formTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    textAlign: 'center',
-    marginBottom: 4,
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 8,
   },
   formSubtitle: {
-    fontSize: 12,
-    color: '#94A3B8',
+    fontSize: 14,
+    color: '#6B7280',
     textAlign: 'center',
-    marginBottom: 24,
+    marginBottom: 32,
   },
-  inputWrapper: {
-    marginBottom: 16,
+  inputGroup: {
+    width: '100%',
+    marginBottom: 20,
   },
   inputLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#94A3B8',
-    marginBottom: 6,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#4B5563',
+    letterSpacing: 1,
+    marginBottom: 8,
   },
   input: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    width: '100%',
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    fontSize: 15,
-    color: '#FFFFFF',
-  },
-  inputFocused: {
-    borderColor: '#F5C40A', // Highlight with gold border on focus
-    backgroundColor: 'rgba(245, 196, 10, 0.03)',
+    fontSize: 16,
+    color: '#111827',
   },
   startBtn: {
-    backgroundColor: '#003087',
-    borderColor: '#F5C40A',
-    borderWidth: 2,
-    borderRadius: 12,
+    width: '100%',
+    backgroundColor: '#2563EB',
+    borderRadius: 14,
     paddingVertical: 16,
     alignItems: 'center',
-    marginTop: 10,
-    shadowColor: '#F5C40A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    marginTop: 12,
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
     elevation: 6,
   },
   startBtnText: {
-    color: '#F5C40A',
-    fontSize: 15,
-    fontWeight: 'bold',
-    letterSpacing: 1.2,
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
-  simulatorHeader: {
+  // ─── CAMERA & SCANNING ────────────────────────────────
+  cameraContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  cameraWrapper: {
+    flex: 1,
+    position: 'relative',
+  },
+  floatingBackBtn: {
     position: 'absolute',
     top: 50,
     left: 20,
-    right: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(245, 196, 10, 0.3)',
-    zIndex: 100,
+    zIndex: 10,
   },
-  simulatorLabelDev: {
-    fontSize: 12,
-    color: '#94A3B8',
+  floatingBackArrow: {
+    color: '#FFF',
+    fontSize: 20,
     fontWeight: 'bold',
+  },
+  floatingDevBar: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 12,
+    padding: 10,
+    zIndex: 10,
+    alignItems: 'flex-end',
+  },
+  devToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  devLabel: {
+    color: '#FFF',
+    fontSize: 12,
     marginRight: 8,
   },
   forceCaptureBtn: {
-    backgroundColor: 'rgba(0, 48, 135, 0.6)',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
+    backgroundColor: 'rgba(37,99,235,0.8)',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#F5C40A',
   },
   forceCaptureBtnText: {
-    color: '#F5C40A',
+    color: '#FFF',
     fontSize: 11,
     fontWeight: 'bold',
   },
-  cameraTopRow: {
+  // ─── SCANNING OVERLAY ────────────────────────────────
+  progressOverlay: {
     position: 'absolute',
     bottom: 40,
-    alignSelf: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.92)',
-    paddingVertical: 20,
-    paddingHorizontal: 20,
-    borderRadius: 24,
-    alignItems: 'center',
-    width: '90%',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    left: 20,
+    right: 20,
+  },
+  glassOverlayCard: {
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderRadius: 20,
+    padding: 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
+    shadowOpacity: 0.1,
     shadowRadius: 20,
     elevation: 10,
   },
-  progressText: {
-    color: '#F5C40A',
-    fontSize: 13,
-    fontWeight: 'bold',
+  progressStatusText: {
+    color: '#111827',
+    fontSize: 16,
+    fontWeight: '700',
     textAlign: 'center',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    marginBottom: 16,
   },
-  liveBtn: {
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  liveDot: {
-    width: 6,
+  progressBarTrack: {
+    width: '100%',
     height: 6,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: '#E5E7EB',
     borderRadius: 3,
-    marginTop: 12,
-    marginBottom: 12,
     overflow: 'hidden',
   },
   progressBarFill: {
     height: '100%',
-    backgroundColor: '#F5C40A',
+    backgroundColor: '#2563EB',
+    borderRadius: 3,
   },
-  stepperContainer: {
+  poseStepper: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    width: '100%',
-    marginTop: 6,
-    borderTopWidth: 0.5,
-    borderColor: 'rgba(255,255,255,0.1)',
-    paddingTop: 12,
+    marginTop: 20,
   },
-  stepItem: {
+  poseStep: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  poseIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  poseIconDone: {
+    backgroundColor: '#10B981',
+  },
+  poseIconActive: {
+    backgroundColor: '#2563EB',
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  poseIconText: {
+    fontSize: 16,
+    color: '#9CA3AF',
+  },
+  poseLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#9CA3AF',
+    textTransform: 'uppercase',
+  },
+  // ─── PROCESSING OVERLAY ────────────────────────────────
+  processingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+    zIndex: 20,
+  },
+  processingSpinnerWrap: {
+    width: 100,
+    height: 100,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  spinnerRing: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 4,
+    borderColor: '#E5E7EB',
+    borderTopColor: '#2563EB',
+    borderRightColor: '#2563EB',
+  },
+  spinnerCenter: {
+    position: 'absolute',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  spinnerIcon: {
+    fontSize: 28,
+  },
+  processingTitle: {
+    color: '#111827',
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  processingText: {
+    color: '#6B7280',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  processingProgressRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
   },
-  stepIndicator: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginRight: 4,
+  processingSubtext: {
+    color: '#2563EB',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
   },
-  stepText: {
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  instructionText: {
-    color: '#94A3B8',
-    fontSize: 11,
-    marginTop: 12,
-    textAlign: 'center',
-    fontStyle: 'italic',
-  },
-  guideFrameContainer: {
-    position: 'absolute',
-    top: 60,
-    bottom: 60,
-    left: 40,
-    right: 40,
-    justifyContent: 'center',
-    backgroundColor: '#0A0F1D',
-    padding: 24,
-  },
-  successCard: {
-    backgroundColor: 'rgba(15, 23, 42, 0.88)',
-    borderRadius: 24,
-    padding: 32,
-    alignItems: 'center',
-    width: '100%',
-    borderWidth: 1.5,
-    borderColor: 'rgba(16, 185, 129, 0.3)',
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-    elevation: 8,
-  },
-  successIconCircle: {
+  // ─── SUCCESS SCREEN EXTRAS ────────────────────────────────
+  successCheckCircle: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    alignItems: 'center',
+    backgroundColor: '#10B981',
     justifyContent: 'center',
-    marginBottom: 20,
-    borderWidth: 1.5,
-    borderColor: '#10B981',
+    alignItems: 'center',
+    marginBottom: 24,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
   },
-  successIcon: {
+  successCheckMark: {
+    color: '#fff',
     fontSize: 40,
-    color: '#10B981',
     fontWeight: 'bold',
   },
   successTitle: {
     fontSize: 24,
-    color: '#10B981',
     fontWeight: 'bold',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  successDetailCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    width: '100%',
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  successText: {
-    fontSize: 14,
-    color: '#94A3B8',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  successValue: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-  timestamp: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  doneBtn: {
-    backgroundColor: '#003087',
-    borderColor: '#F5C40A',
-    borderWidth: 1.5,
-    paddingHorizontal: 40,
-    paddingVertical: 14,
-    borderRadius: 12,
-    shadowColor: '#F5C40A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  doneBtnText: {
-    color: '#F5C40A',
-    fontSize: 16,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
-  },
-  processingOverlay: {
-    position: 'absolute',
-    top: '30%',
-    alignSelf: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.95)',
-    paddingVertical: 24,
-    paddingHorizontal: 24,
-    borderRadius: 24,
-    alignItems: 'center',
-    width: '90%',
-    borderWidth: 1.5,
-    borderColor: '#F5C40A',
-    shadowColor: '#F5C40A',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  processingTitle: {
-    color: '#F5C40A',
-    fontSize: 16,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 8,
-    letterSpacing: 0.5,
-  },
-  processingText: {
-    color: '#94A3B8',
-    fontSize: 12,
-    textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 10,
-  },
-  statusSubtext: {
-    color: '#FFD700',
-    fontSize: 11,
-    fontStyle: 'italic',
-    textAlign: 'center',
-  },
-  successContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 26,
-    backgroundColor: '#f8f9fa',
-  },
-  successTitle: {
-    fontSize: 28,
-    color: '#28a745',
-    fontWeight: 'bold',
-    marginBottom: 24,
-  },
-  successText: {
-    fontSize: 18,
-    color: '#333',
-    marginBottom: 8,
-  },
-  timestamp: {
-    fontSize: 14,
-    color: '#6c757d',
-    marginTop: 16,
+    color: '#111827',
     marginBottom: 32,
   },
-  doneBtn: {
-    backgroundColor: '#003087',
-    paddingHorizontal: 40,
-    paddingVertical: 18,
-    borderRadius: 8,
+  successInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingVertical: 12,
   },
-  doneBtnText: {
-    color: '#FFD700',
-    fontSize: 18,
-    fontWeight: 'bold',
-  }
+  successLabel: {
+    color: '#6B7280',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  successValue: {
+    color: '#111827',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  successDivider: {
+    width: '100%',
+    height: 1,
+    backgroundColor: '#E5E7EB',
+  },
 });

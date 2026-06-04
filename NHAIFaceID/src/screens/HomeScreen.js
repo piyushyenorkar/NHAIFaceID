@@ -82,6 +82,29 @@ export default function HomeScreen({ navigation }) {
               <Text style={styles.logo}>NHAI</Text>
               <Text style={styles.logoSub}>DATALAKE 3.0 — FIELD AUTH</Text>
             </View>
+            <View style={styles.workerBlock}>
+              <View style={styles.workerTextContainer}>
+                <Text style={styles.workerName}>Ravi Kumar</Text>
+                <Text style={styles.workerSite}>Site: NH-48 Pune</Text>
+              </View>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>RK</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Search Bar - Glassmorphism */}
+          <View style={styles.searchContainer}>
+            <View style={styles.searchBar}>
+              <Text style={styles.searchIcon}>🔍</Text>
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search ID / Name"
+                placeholderTextColor="rgba(255,255,255,0.4)"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+            </View>
           </View>
 
           {/* Body */}
@@ -126,9 +149,11 @@ export default function HomeScreen({ navigation }) {
                   <View style={{ height: 23 }} />
                 </View>
                 <View style={styles.cardFooter}>
-                  <View style={styles.actionPill}>
-                    <Text style={styles.actionPillText}>TAP TO ENROLL</Text>
-                    <Svg width="14" height="14" viewBox="0 0 24 24" strokeWidth="2.5" stroke="#fff" fill="none" strokeLinecap="round" strokeLinejoin="round" style={{marginLeft: 4}}>
+                  <View style={styles.timePill}>
+                    <Text style={styles.timeText}>Tap to Enroll</Text>
+                  </View>
+                  <View style={styles.arrowBtn}>
+                    <Svg width="16" height="16" viewBox="0 0 24 24" strokeWidth="3" stroke="#fff" fill="none" strokeLinecap="round" strokeLinejoin="round">
                       <Path stroke="none" d="M0 0h24v24H0z" fill="none"/>
                       <Path d="M5 12l14 0" />
                       <Path d="M13 18l6 -6" />
@@ -171,9 +196,11 @@ export default function HomeScreen({ navigation }) {
                   <View style={{ height: 23 }} />
                 </View>
                 <View style={styles.cardFooter}>
-                  <View style={styles.actionPill}>
-                    <Text style={styles.actionPillText}>TAP TO VERIFY</Text>
-                    <Svg width="14" height="14" viewBox="0 0 24 24" strokeWidth="2.5" stroke="#fff" fill="none" strokeLinecap="round" strokeLinejoin="round" style={{marginLeft: 4}}>
+                  <View style={styles.timePill}>
+                    <Text style={styles.timeText}>Tap to Verify</Text>
+                  </View>
+                  <View style={styles.arrowBtn}>
+                    <Svg width="16" height="16" viewBox="0 0 24 24" strokeWidth="3" stroke="#fff" fill="none" strokeLinecap="round" strokeLinejoin="round">
                       <Path stroke="none" d="M0 0h24v24H0z" fill="none"/>
                       <Path d="M5 12l14 0" />
                       <Path d="M13 18l6 -6" />
@@ -228,7 +255,7 @@ export default function HomeScreen({ navigation }) {
             {/* Animated Progress Bar */}
             <View style={styles.progressContainer}>
               <View style={styles.progressHeader}>
-                <Text style={styles.progressTitle}>VERIFICATIONS TODAY</Text>
+                <Text style={styles.progressTitle}>Verifications Today</Text>
                 <Text style={styles.progressText}>{stats.verificationsToday} / {verificationGoal}</Text>
               </View>
               <View style={styles.progressBarBg}>
@@ -288,10 +315,6 @@ export default function HomeScreen({ navigation }) {
 
             {/* Benchmark Button */}
             <TouchableOpacity style={styles.benchBtn} onPress={() => navigation.navigate('Benchmark')} activeOpacity={0.8}>
-              <Svg width="18" height="18" viewBox="0 0 24 24" strokeWidth="2.5" stroke="#0A1F44" fill="none" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: 8}}>
-                <Path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                <Path d="M3 12h4l3 -9l5 18l3 -9h6" />
-              </Svg>
               <Text style={styles.benchBtnText}>RUN DIAGNOSTIC BENCHMARK</Text>
             </TouchableOpacity>
 
@@ -318,23 +341,23 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: '#0A1F44',
-    paddingTop: 14,
+    paddingTop: 8,
     paddingHorizontal: 20,
-    paddingBottom: 18,
+    paddingBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   logo: {
-    fontSize: 28,
+    fontSize: 30,
     fontFamily: 'Rajdhani-Bold',
     fontWeight: 'bold',
     color: '#F5C40A',
     letterSpacing: 1.5,
-    lineHeight: 28,
+    lineHeight: 30,
   },
   logoSub: {
-    fontSize: 10,
+    fontSize: 12,
     fontFamily: 'Inter-SemiBold',
     color: 'rgba(255,255,255,0.45)',
     letterSpacing: 1.2,
@@ -404,18 +427,18 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   body: {
-    paddingTop: 10,
+    paddingTop: 8,
     paddingHorizontal: 16,
-    paddingBottom: 10,
+    paddingBottom: 8,
     flex: 1,
     justifyContent: 'space-between',
   },
   sectionLabel: {
-    fontSize: 11,
+    fontSize: 13,
     fontFamily: 'Inter-Bold',
     color: '#9CA3AF',
     letterSpacing: 1.5,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   cardsRow: {
     flexDirection: 'row',
@@ -424,12 +447,12 @@ const styles = StyleSheet.create({
   actionCard: {
     flex: 1,
     borderRadius: 18,
-    paddingTop: 22,
+    paddingTop: 12,
     paddingHorizontal: 12,
-    paddingBottom: 22,
+    paddingBottom: 12,
     justifyContent: 'space-between',
-    minHeight: 150,
-    marginHorizontal: 8,
+    minHeight: 125,
+    marginHorizontal: 6,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
@@ -459,19 +482,19 @@ const styles = StyleSheet.create({
     // Transparent to merge with gradient
   },
   cardLabel: {
-    fontSize: 26,
+    fontSize: 28,
     fontFamily: 'Rajdhani-Bold',
     fontWeight: 'bold',
     color: '#fff',
     letterSpacing: 0.5,
-    lineHeight: 26,
+    lineHeight: 28,
   },
   cardSub: {
-    fontSize: 12,
+    fontSize: 14,
     fontFamily: 'Inter-SemiBold',
     color: 'rgba(255,255,255,0.9)',
     marginTop: 5,
-    lineHeight: 16,
+    lineHeight: 18,
   },
   cardFooter: {
     flexDirection: 'row',
@@ -479,19 +502,27 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     marginTop: 12,
   },
-  actionPill: {
+  timePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 16,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderRadius: 8,
     paddingVertical: 6,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
   },
-  actionPillText: {
-    fontSize: 10,
+  timeText: {
+    fontSize: 13,
     fontFamily: 'Inter-Bold',
     color: '#fff',
-    letterSpacing: 1,
+  },
+  arrowBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
   },
   glow: {
     position: 'absolute',
@@ -511,11 +542,11 @@ const styles = StyleSheet.create({
     width: '48%',
     backgroundColor: '#fff',
     borderRadius: 12,
-    padding: 20,
-    paddingHorizontal: 12,
+    padding: 10,
+    paddingHorizontal: 10,
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    marginBottom: 10,
+    marginBottom: 6,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
@@ -529,17 +560,17 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   metricNum: {
-    fontSize: 22,
+    fontSize: 24,
     fontFamily: 'Rajdhani-Bold',
-    lineHeight: 24,
+    lineHeight: 26,
   },
   metricArrow: {
     color: '#9CA3AF',
-    fontSize: 12,
+    fontSize: 14,
     fontFamily: 'Inter-Bold',
   },
   metricLabel: {
-    fontSize: 12,
+    fontSize: 14,
     fontFamily: 'Inter-SemiBold',
     color: '#374151',
     flexShrink: 1,
@@ -547,7 +578,7 @@ const styles = StyleSheet.create({
   progressContainer: {
     backgroundColor: '#F0F9FF',
     borderRadius: 12,
-    padding: 24,
+    padding: 14,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
@@ -556,21 +587,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E0F2FE',
     flexShrink: 0, // Ensure it never gets crushed on small screens
-    marginBottom: 8,
   },
   progressHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   progressTitle: {
-    fontSize: 13,
+    fontSize: 15,
     fontFamily: 'Inter-SemiBold',
     color: '#1E3A8A',
   },
   progressText: {
-    fontSize: 12,
+    fontSize: 14,
     fontFamily: 'Inter-SemiBold',
     color: '#3B82F6',
   },
@@ -588,7 +618,7 @@ const styles = StyleSheet.create({
   diagBox: {
     backgroundColor: '#FFFFFF', // Crisp clean white
     borderRadius: 14,
-    padding: 24,
+    padding: 14,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
@@ -596,12 +626,11 @@ const styles = StyleSheet.create({
     elevation: 2,
     borderWidth: 1,
     borderColor: '#E2E8F0', // Clean gray border
-    marginBottom: 8,
   },
   diagHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 14,
+    marginBottom: 12,
   },
   hudDot: {
     width: 8,
@@ -616,7 +645,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   diagHead: {
-    fontSize: 12,
+    fontSize: 14,
     fontFamily: 'Inter-SemiBold',
     color: '#10B981',
     letterSpacing: 1.5,
@@ -650,7 +679,7 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: '#FFFFFF', // Clean white
     borderRadius: 12,
-    paddingVertical: 18,
+    paddingVertical: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -663,7 +692,7 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0', // Clean gray border
   },
   benchBtnText: {
-    fontSize: 12,
+    fontSize: 14,
     fontFamily: 'Inter-Bold',
     color: '#0A1F44', // Dark text for contrast against beige
     letterSpacing: 1,
