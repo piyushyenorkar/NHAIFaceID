@@ -331,6 +331,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
     ? Math.min(1.2, device.maxExposureBias ?? 1.2) 
     : undefined;
 
+
   const handleLayout = (event) => {
     const { width: lw, height: lh } = event.nativeEvent.layout;
     setLayoutDims({ w: lw, h: lh });
