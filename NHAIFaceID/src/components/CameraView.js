@@ -465,6 +465,14 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         const face = faces[0];
         const bounds = face.bounds || face.boundingBox || face;
         
+        if (frameCount.current % 30 === 0) {
+          console.log('[CameraView] FACE PAYLOAD KEYS:', Object.keys(face).join(', '));
+          console.log('[CameraView] BOUNDS PAYLOAD:', JSON.stringify(bounds));
+          if (face.contours) {
+            console.log('[CameraView] CONTOURS PAYLOAD KEYS:', Object.keys(face.contours).join(', '));
+          }
+        }
+        
         // Extract raw coordinates robustly for both iOS and Android MLKit payloads
         const bX = bounds.x ?? bounds.left ?? bounds.origin?.x ?? 0;
         const bY = bounds.y ?? bounds.top ?? bounds.origin?.y ?? 0;
