@@ -1,27 +1,37 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, FlatList, TouchableOpacity, Image, Alert } from 'react-native';
+import React, { useState, useEffect, useLayoutEffect } from 'react';
+import { StyleSheet, Text, View, FlatList, TouchableOpacity, Image, Alert, SafeAreaView } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 import { getAllEnrolledFaces, getVerificationsToday, getPendingSyncLogs, purgeAllData } from '../services/localStorage';
 
-export default function UserListScreen() {
+export default function UserListScreen({ navigation }) {
+  useLayoutEffect(() => {
+    navigation.setOptions({ headerShown: false });
+  }, [navigation]);
+
   const [activeTab, setActiveTab] = useState('enrolled');
   const [data, setData] = useState([]);
+  const [stats, setStats] = useState({ enrolled: 0, verified: 0, pending: 0 });
 
   useEffect(() => {
-    loadData(activeTab);
+    loadAllData();
   }, [activeTab]);
 
-  const loadData = async (tab) => {
+  const loadAllData = async () => {
     try {
-      if (tab === 'enrolled') {
-        const res = await getAllEnrolledFaces();
-        setData(res);
-      } else if (tab === 'verified') {
-        const res = await getVerificationsToday();
-        setData(res);
-      } else if (tab === 'pending') {
-        const res = await getPendingSyncLogs();
-        setData(res);
-      }
+      // Fetch all to update summary counters
+      const enrolledRes = await getAllEnrolledFaces();
+      const verifiedRes = await getVerificationsToday();
+      const pendingRes = await getPendingSyncLogs();
+      
+      setStats({
+        enrolled: enrolledRes.length,
+        verified: verifiedRes.length,
+        pending: pendingRes.length
+      });
+
+      if (activeTab === 'enrolled') setData(enrolledRes);
+      else if (activeTab === 'verified') setData(verifiedRes);
+      else if (activeTab === 'pending') setData(pendingRes);
     } catch (e) {
       console.error('Failed to load tab data', e);
     }
@@ -30,7 +40,7 @@ export default function UserListScreen() {
   const handleWipe = () => {
     Alert.alert(
       "Wipe Entire Database?",
-      "This will instantly delete all 9 duplicated users and all logs so you can start completely fresh. Are you sure?",
+      "This will instantly delete all users and all logs so you can start completely fresh. Are you sure?",
       [
         { text: "Cancel", style: "cancel" },
         { 
@@ -38,7 +48,7 @@ export default function UserListScreen() {
           style: "destructive",
           onPress: async () => {
             await purgeAllData();
-            loadData(activeTab);
+            loadAllData();
             Alert.alert("Success", "All test data wiped!");
           }
         }
@@ -46,173 +56,255 @@ export default function UserListScreen() {
     );
   };
 
-  const renderEnrolledCard = ({ item }) => {
-    let embeddingArray = [];
-    try {
-      embeddingArray = JSON.parse(item.embedding);
-    } catch (e) {}
+  const getTheme = () => {
+    if (activeTab === 'enrolled') return { color: '#F59E0B', bg: '#FEF3C7', border: '#FCD34D' }; // Yellow
+    if (activeTab === 'verified') return { color: '#10B981', bg: '#D1FAE5', border: '#6EE7B7' }; // Green
+    if (activeTab === 'pending') return { color: '#F97316', bg: '#FFEDD5', border: '#FDBA74' }; // Orange
+    return { color: '#6B7280', bg: '#F3F4F6', border: '#E5E7EB' };
+  };
+
+  const theme = getTheme();
+
+  const renderCard = ({ item }) => {
+    const name = item.name || (item.employee ? item.employee.name : 'UNKNOWN');
+    const id = item.employee_id || '0000';
+    
+    // Fallback initials if needed, but we'll try to show the face
+    const initials = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
 
     return (
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
+      <View style={[styles.gridCard, { borderColor: theme.border }]}>
+        <View style={[styles.cardTop, { backgroundColor: theme.bg }]}>
           {item.thumbnail_path ? (
-            <Image source={{ uri: item.thumbnail_path }} style={styles.thumbnail} />
+            <Image 
+              source={{ uri: item.thumbnail_path }} 
+              style={[styles.avatarImg, { borderColor: theme.color }]} 
+            />
           ) : (
-            <View style={[styles.thumbnail, { backgroundColor: '#333', justifyContent: 'center', alignItems: 'center' }]}>
-              <Text style={{color: '#FFF', fontSize: 10}}>No Photo</Text>
+            <View style={[styles.avatarImg, styles.avatarPlaceholder, { borderColor: theme.color, backgroundColor: theme.color }]}>
+               <Text style={styles.avatarInitials}>{initials}</Text>
             </View>
           )}
-          <View style={styles.cardInfo}>
-            <Text style={styles.nameText}>{item.name}</Text>
-            <Text style={styles.idText}>ID: {item.employee_id}</Text>
-            <Text style={styles.dateText}>Enrolled: {item.enrolled_at}</Text>
-          </View>
+          <View style={[styles.statusDot, { backgroundColor: theme.color }]} />
         </View>
-
-        <View style={styles.hashContainer}>
-          <Text style={styles.hashTitle}>192-D MobileFaceNet Embedding (First 8):</Text>
-          <Text style={styles.hashText}>
-            [{Array.isArray(embeddingArray) ? embeddingArray.slice(0, 8).map(v => (typeof v === 'number' ? v : Number(v) || 0).toFixed(4)).join(', ') : 'N/A'} ...]
-          </Text>
+        <View style={styles.cardBottom}>
+          <Text style={styles.cardName} numberOfLines={1}>{name}</Text>
+          <Text style={styles.cardId}>{id}</Text>
         </View>
       </View>
     );
   };
 
-  const renderLogCard = ({ item }) => (
-    <View style={styles.card}>
-      <Text style={styles.nameText}>Emp ID: {item.employee_id || 'UNKNOWN'}</Text>
-      <Text style={[styles.idText, { color: item.matched ? '#28a745' : '#dc3545' }]}>
-        Status: {item.matched ? 'MATCHED' : 'FAILED'}
-      </Text>
-      <Text style={styles.idText}>Confidence: {item.confidence}%</Text>
-      <Text style={styles.dateText}>Time: {item.timestamp}</Text>
-    </View>
-  );
-
   return (
-    <View style={styles.container}>
-      <View style={{padding: 10, backgroundColor: '#003087', alignItems: 'flex-end'}}>
-        <TouchableOpacity style={{backgroundColor: '#dc3545', padding: 8, borderRadius: 6}} onPress={handleWipe}>
-          <Text style={{color: '#FFF', fontWeight: 'bold'}}>🗑️ Wipe All Test Data</Text>
-        </TouchableOpacity>
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={{flexDirection: 'row', alignItems: 'center'}}>
+            <TouchableOpacity style={styles.backBtn} onPress={() => navigation?.goBack()}>
+              <Svg width="18" height="18" viewBox="0 0 24 24" strokeWidth="2.5" stroke="#F5C40A" fill="none">
+                <Path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                <Path d="M5 12l14 0" />
+                <Path d="M5 12l6 6" />
+                <Path d="M5 12l6 -6" />
+              </Svg>
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Biometric Registry</Text>
+          </View>
+          
+          <TouchableOpacity style={styles.wipeBtn} onPress={handleWipe}>
+            <Svg width="14" height="14" viewBox="0 0 24 24" strokeWidth="2" stroke="#EF4444" fill="none" style={{marginRight: 6}}>
+              <Path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+              <Path d="M4 7l16 0" />
+              <Path d="M10 11l0 6" />
+              <Path d="M14 11l0 6" />
+              <Path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" />
+              <Path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" />
+            </Svg>
+            <Text style={styles.wipeText}>Wipe all Test data</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Summary Boxes / Tabs */}
+        <View style={styles.summaryContainer}>
+          <TouchableOpacity 
+            style={[styles.summaryBox, activeTab === 'enrolled' ? { borderColor: '#F59E0B', backgroundColor: '#FEF3C7' } : null]} 
+            onPress={() => setActiveTab('enrolled')}
+          >
+            <Text style={[styles.summaryLabel, { color: '#F59E0B' }]}>ENROLLED</Text>
+            <Text style={[styles.summaryCount, { color: '#F59E0B' }]}>{stats.enrolled}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.summaryBox, activeTab === 'verified' ? { borderColor: '#10B981', backgroundColor: '#D1FAE5' } : null]} 
+            onPress={() => setActiveTab('verified')}
+          >
+            <Text style={[styles.summaryLabel, { color: '#10B981' }]}>VERIFIED</Text>
+            <Text style={[styles.summaryCount, { color: '#10B981' }]}>{stats.verified}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.summaryBox, activeTab === 'pending' ? { borderColor: '#F97316', backgroundColor: '#FFEDD5' } : null]} 
+            onPress={() => setActiveTab('pending')}
+          >
+            <Text style={[styles.summaryLabel, { color: '#F97316' }]}>PENDING</Text>
+            <Text style={[styles.summaryCount, { color: '#F97316' }]}>{stats.pending}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Grid List */}
+        <FlatList
+          data={data}
+          keyExtractor={(item, index) => item.id ? item.id.toString() : index.toString()}
+          renderItem={renderCard}
+          numColumns={3}
+          contentContainerStyle={styles.listContainer}
+          columnWrapperStyle={styles.columnWrapper}
+          ListEmptyComponent={<Text style={styles.emptyText}>No records found.</Text>}
+        />
       </View>
-
-      <View style={styles.tabsContainer}>
-        <TouchableOpacity 
-          style={[styles.tab, activeTab === 'enrolled' && styles.activeTab]}
-          onPress={() => setActiveTab('enrolled')}
-        >
-          <Text style={[styles.tabText, activeTab === 'enrolled' && styles.activeTabText]}>Enrolled</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[styles.tab, activeTab === 'verified' && styles.activeTab]}
-          onPress={() => setActiveTab('verified')}
-        >
-          <Text style={[styles.tabText, activeTab === 'verified' && styles.activeTabText]}>Verified</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={[styles.tab, activeTab === 'pending' && styles.activeTab]}
-          onPress={() => setActiveTab('pending')}
-        >
-          <Text style={[styles.tabText, activeTab === 'pending' && styles.activeTabText]}>Pending</Text>
-        </TouchableOpacity>
-      </View>
-
-      <FlatList
-        data={data}
-        keyExtractor={(item) => item.id.toString()}
-        renderItem={activeTab === 'enrolled' ? renderEnrolledCard : renderLogCard}
-        contentContainerStyle={styles.listContainer}
-        ListEmptyComponent={<Text style={{textAlign: 'center', marginTop: 20}}>No records found.</Text>}
-      />
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#0A1F44',
+  },
   container: {
     flex: 1,
-    backgroundColor: '#F0F2F5',
-  },
-  tabsContainer: {
-    flexDirection: 'row',
     backgroundColor: '#FFF',
-    elevation: 2,
   },
-  tab: {
-    flex: 1,
-    paddingVertical: 15,
+  header: {
+    backgroundColor: '#0A1F44',
+    paddingTop: 14,
+    paddingHorizontal: 20,
+    paddingBottom: 18,
+    flexDirection: 'row',
     alignItems: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
+    justifyContent: 'space-between',
   },
-  activeTab: {
-    borderBottomColor: '#003087',
+  backBtn: {
+    borderWidth: 1,
+    borderColor: '#4B5563',
+    borderRadius: 8,
+    padding: 6,
+    marginRight: 12,
   },
-  tabText: {
-    color: '#666',
+  headerTitle: {
+    color: '#F5C40A',
+    fontSize: 20,
     fontWeight: 'bold',
   },
-  activeTabText: {
-    color: '#003087',
-  },
-  listContainer: {
-    padding: 15,
-  },
-  card: {
-    backgroundColor: '#FFF',
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 15,
-    elevation: 2,
-  },
-  cardHeader: {
+  wipeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
   },
-  thumbnail: {
+  wipeText: {
+    color: '#EF4444',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  summaryContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingTop: 16,
+    paddingBottom: 16,
+    backgroundColor: '#FFF',
+  },
+  summaryBox: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    paddingVertical: 12,
+    marginHorizontal: 4,
+  },
+  summaryLabel: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  summaryCount: {
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
+  listContainer: {
+    padding: 12,
+  },
+  columnWrapper: {
+    justifyContent: 'flex-start',
+  },
+  emptyText: {
+    textAlign: 'center',
+    marginTop: 40,
+    color: '#64748B',
+    fontSize: 14,
+  },
+  gridCard: {
+    flex: 1,
+    margin: 4,
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: 'hidden',
+    maxWidth: '32%',
+  },
+  cardTop: {
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  avatarImg: {
     width: 60,
     height: 60,
     borderRadius: 30,
-    marginRight: 15,
+    borderWidth: 3,
   },
-  cardInfo: {
-    flex: 1,
+  avatarPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  nameText: {
-    fontSize: 18,
+  avatarInitials: {
+    color: '#FFF',
+    fontSize: 20,
     fontWeight: 'bold',
-    color: '#333',
   },
-  idText: {
-    fontSize: 14,
-    color: '#555',
-    marginTop: 2,
+  statusDot: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: '#FFF',
   },
-  dateText: {
-    fontSize: 12,
-    color: '#999',
-    marginTop: 4,
+  cardBottom: {
+    padding: 8,
+    backgroundColor: '#FFF',
   },
-  hashContainer: {
-    backgroundColor: '#000',
-    padding: 10,
-    borderRadius: 6,
-    marginTop: 5,
+  cardName: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#1E293B',
+    marginBottom: 2,
   },
-  hashTitle: {
-    color: '#00FF00',
-    fontSize: 10,
-    fontFamily: 'monospace',
-    marginBottom: 4,
-  },
-  hashText: {
-    color: '#00FF00',
-    fontSize: 10,
-    fontFamily: 'monospace',
-  },
+  cardId: {
+    fontSize: 11,
+    color: '#94A3B8',
+  }
 });

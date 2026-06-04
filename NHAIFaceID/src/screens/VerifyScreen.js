@@ -160,14 +160,6 @@ export default function VerifyScreen({ navigation }) {
 
   const renderHeader = () => (
     <View style={styles.header}>
-      <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-        <Svg width="18" height="18" viewBox="0 0 24 24" strokeWidth="2.5" stroke="#F5C40A" fill="none">
-          <Path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-          <Path d="M5 12l14 0" />
-          <Path d="M5 12l6 6" />
-          <Path d="M5 12l6 -6" />
-        </Svg>
-      </TouchableOpacity>
       <View style={styles.headerTitles}>
         <Text style={styles.headerTitle}>Verify Identity</Text>
       </View>
@@ -223,17 +215,15 @@ export default function VerifyScreen({ navigation }) {
             isActive={matchStatus === 'SEARCHING'} 
             onFaceDetected={handleFaceDetected} 
             detectedFace={detectedFace}
+            flipButtonStyle={{ top: 16, right: 20 }}
+            hideInfoCard={true}
           />
           
+          {/* Floating Back Button over Camera */}
           {matchStatus === 'SEARCHING' && (
-            <View style={styles.yellowBanner}>
-              <Text style={styles.bannerTitle}>{statusMessage}</Text>
-              {progress > 0 && (
-                <View style={styles.progressBarTrack}>
-                  <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
-                </View>
-              )}
-            </View>
+            <TouchableOpacity style={styles.floatingBackBtn} onPress={() => navigation.goBack()}>
+              <Text style={styles.floatingBackArrow}>✕</Text>
+            </TouchableOpacity>
           )}
         </View>
 
@@ -314,13 +304,11 @@ const styles = StyleSheet.create({
   homeBtnText: { color: '#4B5563', fontSize: 16, fontFamily: 'Inter-SemiBold' },
   
   cameraWrapper: { flex: 1.5, position: 'relative', overflow: 'hidden', backgroundColor: '#000' },
-  yellowBanner: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#F59E0B', paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center' },
-  bannerTitle: { color: '#000', fontSize: 14, fontFamily: 'Inter-Bold', marginBottom: 6 },
-  progressBarTrack: { width: '100%', height: 6, backgroundColor: 'rgba(0,0,0,0.15)', borderRadius: 3, overflow: 'hidden' },
-  progressBarFill: { height: '100%', backgroundColor: '#000' },
+  floatingBackBtn: { position: 'absolute', top: 16, left: 20, width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', zIndex: 10 },
+  floatingBackArrow: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
   
-  resultContainer: { flex: 1, backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, marginTop: -16, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 6 },
-  searchingWrapper: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  resultContainer: { flex: 1, paddingVertical: 20, paddingHorizontal: 24, backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, marginTop: -16, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 6 },
+  searchingWrapper: { justifyContent: 'center', alignItems: 'center', paddingVertical: 10 },
   searchingText: { fontSize: 18, fontFamily: 'Inter-Bold', color: '#0A1F44', marginBottom: 8, textAlign: 'center' },
   searchingSubtext: { fontSize: 13, fontFamily: 'Inter-Regular', color: '#6B7280', textAlign: 'center', paddingHorizontal: 20 },
   

@@ -217,7 +217,6 @@ export default function HomeScreen({ navigation }) {
                 <TouchableOpacity style={[styles.metricBox, { backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' }]} activeOpacity={0.7}>
                   <View style={styles.metricHeader}>
                     <Text style={[styles.metricNum, { color: '#7C3AED' }]}>98%</Text>
-                    <Text style={[styles.metricArrow, { color: '#C4B5FD' }]}>↗</Text>
                   </View>
                   <Text style={styles.metricLabel}>Success Rate</Text>
                 </TouchableOpacity>
