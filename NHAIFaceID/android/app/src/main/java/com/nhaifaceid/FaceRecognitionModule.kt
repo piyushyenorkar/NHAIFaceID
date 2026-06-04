@@ -15,6 +15,7 @@ import java.nio.ByteOrder
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
 import kotlin.math.sqrt
+import androidx.exifinterface.media.ExifInterface
 
 /**
  * Native Kotlin module for face recognition using MobileFaceNet TFLite.
@@ -150,7 +151,8 @@ class FaceRecognitionModule(reactContext: ReactApplicationContext) :
     }
 
     /**
-     * Generate embedding directly from a photo file path (no base64 needed).
+     * Generate embedding directly from a photo file path.
+     * CRITICAL: Handles EXIF rotation so the bitmap matches MLKit's portrait coordinate space.
      */
     @ReactMethod
     fun generateEmbeddingFromFile(filePath: String, x: Double, y: Double, w: Double, h: Double, promise: Promise) {
@@ -170,17 +172,41 @@ class FaceRecognitionModule(reactContext: ReactApplicationContext) :
                 return
             }
 
-            val fullBitmap = BitmapFactory.decodeFile(cleanPath)
+            // 1. Read EXIF orientation BEFORE decoding the bitmap
+            val exifRotation = getExifRotation(cleanPath)
+
+            // 2. Decode bitmap
+            var fullBitmap = BitmapFactory.decodeFile(cleanPath)
             if (fullBitmap == null) {
                 promise.reject("DECODE_ERROR", "Failed to decode image file: $cleanPath")
                 return
             }
 
-            // Crop face region
-            val cropX = (x * fullBitmap.width).toInt().coerceIn(0, fullBitmap.width - 1)
-            val cropY = (y * fullBitmap.height).toInt().coerceIn(0, fullBitmap.height - 1)
-            val cropW = (w * fullBitmap.width).toInt().coerceIn(1, fullBitmap.width - cropX)
-            val cropH = (h * fullBitmap.height).toInt().coerceIn(1, fullBitmap.height - cropY)
+            Log.i(TAG, "Photo loaded: ${fullBitmap.width}x${fullBitmap.height}, EXIF rotation: $exifRotation°, bbox: (x=$x, y=$y, w=$w, h=$h)")
+
+            // 3. Apply EXIF rotation to align bitmap with MLKit's portrait coordinate space
+            if (exifRotation != 0) {
+                val matrix = Matrix()
+                matrix.postRotate(exifRotation.toFloat())
+                val rotatedBitmap = Bitmap.createBitmap(fullBitmap, 0, 0, fullBitmap.width, fullBitmap.height, matrix, true)
+                fullBitmap.recycle()
+                fullBitmap = rotatedBitmap
+                Log.i(TAG, "Rotated to: ${fullBitmap.width}x${fullBitmap.height}")
+            }
+
+            // 4. Crop face region with 20% margin for better model accuracy
+            val margin = 0.20
+            val mx = (x - w * margin).coerceAtLeast(0.0)
+            val my = (y - h * margin).coerceAtLeast(0.0)
+            val mw = (w * (1.0 + 2 * margin)).coerceAtMost(1.0 - mx)
+            val mh = (h * (1.0 + 2 * margin)).coerceAtMost(1.0 - my)
+
+            val cropX = (mx * fullBitmap.width).toInt().coerceIn(0, fullBitmap.width - 1)
+            val cropY = (my * fullBitmap.height).toInt().coerceIn(0, fullBitmap.height - 1)
+            val cropW = (mw * fullBitmap.width).toInt().coerceIn(1, fullBitmap.width - cropX)
+            val cropH = (mh * fullBitmap.height).toInt().coerceIn(1, fullBitmap.height - cropY)
+
+            Log.i(TAG, "Crop: ($cropX, $cropY, ${cropW}x${cropH}) from ${fullBitmap.width}x${fullBitmap.height}")
 
             val croppedBitmap = Bitmap.createBitmap(fullBitmap, cropX, cropY, cropW, cropH)
             val resizedBitmap = Bitmap.createScaledBitmap(croppedBitmap, INPUT_SIZE, INPUT_SIZE, true)
@@ -332,6 +358,28 @@ class FaceRecognitionModule(reactContext: ReactApplicationContext) :
             FloatArray(vec.size) { vec[it] / norm }
         } else {
             vec
+        }
+    }
+    /**
+     * Reads EXIF orientation from a JPEG file and returns the rotation in degrees.
+     * This is critical because BitmapFactory.decodeFile() ignores EXIF orientation.
+     */
+    private fun getExifRotation(filePath: String): Int {
+        return try {
+            val exif = ExifInterface(filePath)
+            val orientation = exif.getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL
+            )
+            when (orientation) {
+                ExifInterface.ORIENTATION_ROTATE_90 -> 90
+                ExifInterface.ORIENTATION_ROTATE_180 -> 180
+                ExifInterface.ORIENTATION_ROTATE_270 -> 270
+                else -> 0
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not read EXIF orientation: ${e.message}")
+            0
         }
     }
 }

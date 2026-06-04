@@ -92,13 +92,15 @@ export async function generateEmbedding(croppedFace) {
   }
 
   try {
-    // Use the native Kotlin module to generate the embedding from the photo file
+    // Use FULL IMAGE — the bbox from MLKit's frame processor runs on a different
+    // resolution/timing/coordinate space than takePhoto(), so mapping coordinates
+    // between them is unreliable. The Kotlin module now handles EXIF rotation,
+    // ensuring the face is UPRIGHT (not sideways). MobileFaceNet resizes the full
+    // frame to 112x112, which naturally centers the face since the user is guided
+    // by the on-screen oval.
     const embeddingArray = await FaceRecognitionModule.generateEmbeddingFromFile(
       photoPath,
-      bbox.x || 0,
-      bbox.y || 0,
-      bbox.w ?? bbox.width ?? 0.5,
-      bbox.h ?? bbox.height ?? 0.5
+      0, 0, 1, 1  // full image
     );
 
     if (!embeddingArray || embeddingArray.length !== 192) {
@@ -108,7 +110,7 @@ export async function generateEmbedding(croppedFace) {
 
     // Convert ReadableArray to JS array
     const embedding = Array.from(embeddingArray);
-    
+
     const nonZero = embedding.filter(v => Math.abs(v) > 0.001).length;
     console.log(
       `[Metrics] MobileFaceNet 192-D embedding (NATIVE TFLite) generated in ${Date.now() - start}ms | ` +
@@ -144,7 +146,7 @@ export async function computeCosineSimilarity(emb1, emb2) {
     norm1 += a * a;
     norm2 += b * b;
   }
-  
+
   if (norm1 === 0 || norm2 === 0) return 0;
   return dot / (Math.sqrt(norm1) * Math.sqrt(norm2));
 }

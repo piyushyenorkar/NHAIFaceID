@@ -352,7 +352,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
   const frameCount = useRef(0);
   const lastUIUpdateRef = useRef(0);
 
-  const handleFaceResult = (box, contours, faceMetrics = null) => {
+  const handleFaceResult = (box, contours, faceMetrics = null, frameDims = null) => {
     // Calculate the 468 simulated landmarks safely on the JS thread!
     const simulatedLandmarks = getFaceMesh468(box, contours);
     if (simulatedLandmarks && faceMetrics) {
@@ -370,7 +370,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
     const now = Date.now();
     if (now - lastUIUpdateRef.current > 150) {
       lastUIUpdateRef.current = now;
-      setInternalFace({ bbox: box, landmarks: simulatedLandmarks, color: '#00FF00' });
+      setInternalFace({ bbox: box, landmarks: simulatedLandmarks, color: '#00FF00', frameDims });
     }
     // Always notify parent callback at full speed for enrollment logic
     if (onFaceDetectedRef.current) {
@@ -453,9 +453,13 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         }
 
         const bounds = face.bounds || face.boundingBox || face;
-        // Normalize by FRAME dimensions (camera resolution), not screen dimensions
-        const fw = frame.width || width;
-        const fh = frame.height || height;
+        const frameW = frame.width || width;
+        const frameH = frame.height || height;
+        // MLKit automatically rotates the buffer to match device orientation (portrait).
+        // Therefore, the bounding box is relative to the portrait dimensions.
+        const isPortrait = height >= width; // screen dimensions
+        const fw = isPortrait ? Math.min(frameW, frameH) : Math.max(frameW, frameH);
+        const fh = isPortrait ? Math.max(frameW, frameH) : Math.min(frameW, frameH);
         const normalizedBox = {
           x: (bounds.x ?? bounds.left ?? 0) / fw,
           y: (bounds.y ?? bounds.top ?? 0) / fh,
@@ -500,8 +504,8 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
           }
         }
 
-        // Pass both contours AND face metrics to the JS thread
-        runHandleFaceResult(normalizedBox, normalizedContours, faceMetrics);
+        // Pass both contours, face metrics, AND frame dimensions to the JS thread
+        runHandleFaceResult(normalizedBox, normalizedContours, faceMetrics, { fw, fh });
       } else {
         if (frameCount.current % 5 === 0) {
           runHandleNoFace();
@@ -525,16 +529,32 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
   let activeKeypoints = [];
 
   if (activeFace && activeFace.bbox) {
+    let scaleX = layoutDims.w;
+    let scaleY = layoutDims.h;
+    let offsetX = 0;
+    let offsetY = 0;
+
+    if (activeFace.frameDims) {
+      const { fw, fh } = activeFace.frameDims;
+      const scale = Math.max(layoutDims.w / fw, layoutDims.h / fh);
+      const renderedW = fw * scale;
+      const renderedH = fh * scale;
+      offsetX = (renderedW - layoutDims.w) / 2;
+      offsetY = (renderedH - layoutDims.h) / 2;
+      scaleX = renderedW;
+      scaleY = renderedH;
+    }
+
     activeBox = {
-      x: activeFace.bbox.x * layoutDims.w,
-      y: activeFace.bbox.y * layoutDims.h,
-      w: activeFace.bbox.w * layoutDims.w,
-      h: activeFace.bbox.h * layoutDims.h
+      x: activeFace.bbox.x * scaleX - offsetX,
+      y: activeFace.bbox.y * scaleY - offsetY,
+      w: activeFace.bbox.w * scaleX,
+      h: activeFace.bbox.h * scaleY
     };
     activeColor = activeFace.color || '#00FF00';
     activeKeypoints = (activeFace.landmarks || []).map(kp => ({
-      x: kp.x * layoutDims.w,
-      y: kp.y * layoutDims.h,
+      x: kp.x * scaleX - offsetX,
+      y: kp.y * scaleY - offsetY,
       name: kp.name || ''
     }));
   }
