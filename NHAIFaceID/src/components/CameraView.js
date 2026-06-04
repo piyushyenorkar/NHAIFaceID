@@ -600,7 +600,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
             cy={layoutDims.h * 0.42}
             rx={layoutDims.w * 0.32}
             ry={layoutDims.h * 0.26}
-            stroke={displayFace ? '#10B981' : '#F5C40A'}
+            stroke={displayFace ? '#10B981' : '#00E5FF'}
             strokeWidth="3.5"
             strokeDasharray="12, 6"
             fill="none"

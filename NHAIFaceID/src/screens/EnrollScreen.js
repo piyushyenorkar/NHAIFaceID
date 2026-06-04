@@ -49,6 +49,14 @@ export default function EnrollScreen({ navigation }) {
   const [progress, setProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState('SCANNING');
   
+  const poseInstructions = {
+    CENTER: { icon: '🎯', title: 'Look Straight Ahead', desc: 'Hold still for baseline profile' },
+    LEFT:   { icon: '⬅️', title: 'Turn Head Left', desc: 'Capturing left facial variance' },
+    RIGHT:  { icon: '➡️', title: 'Turn Head Right', desc: 'Capturing right facial variance' },
+    UP:     { icon: '⬆️', title: 'Tilt Head Up', desc: 'Capturing upward jawline angle' },
+    DOWN:   { icon: '⬇️', title: 'Tilt Head Down', desc: 'Capturing downward profile' }
+  };
+  
   const cameraViewRef = useRef(null);
   const lastDetectedRef = useRef(0);
   const progressIntervalRef = useRef(null);
@@ -356,6 +364,15 @@ export default function EnrollScreen({ navigation }) {
         </View>
       )}
 
+      {/* Premium Pose Instruction Overlay (Centered) */}
+      {enrollStatus === 'SCANNING' && !isProcessingStageRef.current && (
+        <View style={styles.premiumInstructionCard}>
+          <Text style={styles.poseIcon}>{poseInstructions[enrollStage].icon}</Text>
+          <Text style={styles.poseTitle}>{poseInstructions[enrollStage].title}</Text>
+          <Text style={styles.poseDesc}>{poseInstructions[enrollStage].desc}</Text>
+        </View>
+      )}
+
       {/* Progress Overlay */}
       {enrollStatus === 'SCANNING' && (
         <View style={styles.progressOverlay}>
@@ -369,32 +386,32 @@ export default function EnrollScreen({ navigation }) {
           {/* Visual 5-Pose Guidance Stepper */}
           <View style={styles.stepperContainer}>
             <View style={styles.stepItem}>
-              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'CENTER' ? '#F5C40A' : collectedEmbeddingsRef.current.CENTER ? '#10B981' : '#64748B' }]} />
-              <Text style={[styles.stepText, { color: enrollStage === 'CENTER' ? '#F5C40A' : collectedEmbeddingsRef.current.CENTER ? '#10B981' : '#64748B' }]}>
+              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'CENTER' ? '#00E5FF' : collectedEmbeddingsRef.current.CENTER ? '#10B981' : '#64748B' }]} />
+              <Text style={[styles.stepText, { color: enrollStage === 'CENTER' ? '#00E5FF' : collectedEmbeddingsRef.current.CENTER ? '#10B981' : '#64748B' }]}>
                 Center
               </Text>
             </View>
             <View style={styles.stepItem}>
-              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'LEFT' ? '#F5C40A' : collectedEmbeddingsRef.current.LEFT ? '#10B981' : '#64748B' }]} />
-              <Text style={[styles.stepText, { color: enrollStage === 'LEFT' ? '#F5C40A' : collectedEmbeddingsRef.current.LEFT ? '#10B981' : '#64748B' }]}>
+              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'LEFT' ? '#00E5FF' : collectedEmbeddingsRef.current.LEFT ? '#10B981' : '#64748B' }]} />
+              <Text style={[styles.stepText, { color: enrollStage === 'LEFT' ? '#00E5FF' : collectedEmbeddingsRef.current.LEFT ? '#10B981' : '#64748B' }]}>
                 Left
               </Text>
             </View>
             <View style={styles.stepItem}>
-              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'RIGHT' ? '#F5C40A' : collectedEmbeddingsRef.current.RIGHT ? '#10B981' : '#64748B' }]} />
-              <Text style={[styles.stepText, { color: enrollStage === 'RIGHT' ? '#F5C40A' : collectedEmbeddingsRef.current.RIGHT ? '#10B981' : '#64748B' }]}>
+              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'RIGHT' ? '#00E5FF' : collectedEmbeddingsRef.current.RIGHT ? '#10B981' : '#64748B' }]} />
+              <Text style={[styles.stepText, { color: enrollStage === 'RIGHT' ? '#00E5FF' : collectedEmbeddingsRef.current.RIGHT ? '#10B981' : '#64748B' }]}>
                 Right
               </Text>
             </View>
             <View style={styles.stepItem}>
-              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'UP' ? '#F5C40A' : collectedEmbeddingsRef.current.UP ? '#10B981' : '#64748B' }]} />
-              <Text style={[styles.stepText, { color: enrollStage === 'UP' ? '#F5C40A' : collectedEmbeddingsRef.current.UP ? '#10B981' : '#64748B' }]}>
+              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'UP' ? '#00E5FF' : collectedEmbeddingsRef.current.UP ? '#10B981' : '#64748B' }]} />
+              <Text style={[styles.stepText, { color: enrollStage === 'UP' ? '#00E5FF' : collectedEmbeddingsRef.current.UP ? '#10B981' : '#64748B' }]}>
                 Up
               </Text>
             </View>
             <View style={styles.stepItem}>
-              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'DOWN' ? '#F5C40A' : collectedEmbeddingsRef.current.DOWN ? '#10B981' : '#64748B' }]} />
-              <Text style={[styles.stepText, { color: enrollStage === 'DOWN' ? '#F5C40A' : collectedEmbeddingsRef.current.DOWN ? '#10B981' : '#64748B' }]}>
+              <View style={[styles.stepIndicator, { backgroundColor: enrollStage === 'DOWN' ? '#00E5FF' : collectedEmbeddingsRef.current.DOWN ? '#10B981' : '#64748B' }]} />
+              <Text style={[styles.stepText, { color: enrollStage === 'DOWN' ? '#00E5FF' : collectedEmbeddingsRef.current.DOWN ? '#10B981' : '#64748B' }]}>
                 Down
               </Text>
             </View>
@@ -411,7 +428,7 @@ export default function EnrollScreen({ navigation }) {
         <View style={styles.processingOverlay}>
           <Text style={styles.processingTitle}>⚙️ Biometric Audit in Progress</Text>
           <Text style={styles.processingText}>
-            Analyzing passive liveness cues & extracting offline face template.
+            Mathematically averaging 5 pose embeddings into a secure 128-D Ensemble Profile and saving to offline database.
           </Text>
           <Text style={styles.processingSubtext}>
             {Math.round(progress)}% Complete - Do not move
@@ -419,7 +436,7 @@ export default function EnrollScreen({ navigation }) {
 
           {/* Show physical geometric distances on screen if capturing */}
           {latestEmbeddingRef.current && (
-            <View style={{marginTop: 14, backgroundColor: 'rgba(0,0,0,0.4)', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(245, 196, 10, 0.2)'}}>
+            <View style={{marginTop: 14, backgroundColor: 'rgba(0,0,0,0.4)', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(0, 229, 255, 0.2)'}}>
               <Text style={{color: '#10B981', fontSize: 10, fontFamily: 'monospace', fontWeight: 'bold'}}>
                 CAPTURED GEOMETRY (First 8 Distances):
               </Text>
@@ -460,7 +477,7 @@ const styles = StyleSheet.create({
     padding: 24,
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.12)',
-    shadowColor: '#F5C40A',
+    shadowColor: '#00E5FF',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.15,
     shadowRadius: 20,
@@ -502,25 +519,25 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   inputFocused: {
-    borderColor: '#F5C40A', // Highlight with gold border on focus
-    backgroundColor: 'rgba(245, 196, 10, 0.03)',
+    borderColor: '#00E5FF', // Highlight with cyan border on focus
+    backgroundColor: 'rgba(0, 229, 255, 0.03)',
   },
   startBtn: {
     backgroundColor: '#003087',
-    borderColor: '#F5C40A',
+    borderColor: '#00E5FF',
     borderWidth: 2,
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 10,
-    shadowColor: '#F5C40A',
+    shadowColor: '#00E5FF',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 6,
   },
   startBtnText: {
-    color: '#F5C40A',
+    color: '#00E5FF',
     fontSize: 15,
     fontWeight: 'bold',
     letterSpacing: 1.2,
@@ -538,7 +555,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(245, 196, 10, 0.3)',
+    borderColor: 'rgba(0, 229, 255, 0.3)',
     zIndex: 100,
   },
   simulatorLabelDev: {
@@ -553,10 +570,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#F5C40A',
+    borderColor: '#00E5FF',
   },
   forceCaptureBtnText: {
-    color: '#F5C40A',
+    color: '#00E5FF',
     fontSize: 11,
     fontWeight: 'bold',
   },
@@ -579,7 +596,7 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   progressText: {
-    color: '#F5C40A',
+    color: '#00E5FF',
     fontSize: 13,
     fontWeight: 'bold',
     textAlign: 'center',
@@ -605,7 +622,7 @@ const styles = StyleSheet.create({
   },
   progressBarFill: {
     height: '100%',
-    backgroundColor: '#F5C40A',
+    backgroundColor: '#00E5FF',
   },
   stepperContainer: {
     flexDirection: 'row',
@@ -636,6 +653,42 @@ const styles = StyleSheet.create({
     marginTop: 12,
     textAlign: 'center',
     fontStyle: 'italic',
+  },
+  premiumInstructionCard: {
+    position: 'absolute',
+    top: '40%',
+    alignSelf: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.75)', // Glassmorphic
+    paddingVertical: 24,
+    paddingHorizontal: 32,
+    borderRadius: 28,
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 229, 255, 0.4)',
+    alignItems: 'center',
+    shadowColor: '#00E5FF',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+    zIndex: 50,
+  },
+  poseIcon: {
+    fontSize: 48,
+    marginBottom: 12,
+  },
+  poseTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginBottom: 8,
+    letterSpacing: 0.5,
+  },
+  poseDesc: {
+    fontSize: 13,
+    color: '#00E5FF',
+    textAlign: 'center',
+    fontWeight: '500',
   },
   guideFrameContainer: {
     position: 'absolute',
@@ -711,19 +764,19 @@ const styles = StyleSheet.create({
   },
   doneBtn: {
     backgroundColor: '#003087',
-    borderColor: '#F5C40A',
+    borderColor: '#00E5FF',
     borderWidth: 1.5,
     paddingHorizontal: 40,
     paddingVertical: 14,
     borderRadius: 12,
-    shadowColor: '#F5C40A',
+    shadowColor: '#00E5FF',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 4,
   },
   doneBtnText: {
-    color: '#F5C40A',
+    color: '#00E5FF',
     fontSize: 16,
     fontWeight: 'bold',
     letterSpacing: 0.5,
@@ -739,15 +792,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     width: '90%',
     borderWidth: 1.5,
-    borderColor: '#F5C40A',
-    shadowColor: '#F5C40A',
+    borderColor: '#00E5FF',
+    shadowColor: '#00E5FF',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.2,
     shadowRadius: 16,
     elevation: 8,
   },
   processingTitle: {
-    color: '#F5C40A',
+    color: '#00E5FF',
     fontSize: 16,
     fontWeight: 'bold',
     textAlign: 'center',
@@ -762,7 +815,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   statusSubtext: {
-    color: '#FFD700',
+    color: '#00E5FF',
     fontSize: 11,
     fontStyle: 'italic',
     textAlign: 'center',
@@ -798,7 +851,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   doneBtnText: {
-    color: '#FFD700',
+    color: '#00E5FF',
     fontSize: 18,
     fontWeight: 'bold',
   }
