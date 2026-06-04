@@ -29,9 +29,21 @@ export default function UserListScreen({ navigation }) {
         pending: pendingRes.length
       });
 
+      // Map to get names and thumbnails for verified and pending logs
+      const enrolledMap = {};
+      enrolledRes.forEach(face => {
+        enrolledMap[face.employee_id] = face;
+      });
+
+      const mapWithEnrolledData = (log) => ({
+        ...log,
+        name: enrolledMap[log.employee_id]?.name || 'UNKNOWN',
+        thumbnail_path: enrolledMap[log.employee_id]?.thumbnail_path || null
+      });
+
       if (activeTab === 'enrolled') setData(enrolledRes);
-      else if (activeTab === 'verified') setData(verifiedRes);
-      else if (activeTab === 'pending') setData(pendingRes);
+      else if (activeTab === 'verified') setData(verifiedRes.map(mapWithEnrolledData));
+      else if (activeTab === 'pending') setData(pendingRes.map(mapWithEnrolledData));
     } catch (e) {
       console.error('Failed to load tab data', e);
     }
@@ -69,12 +81,22 @@ export default function UserListScreen({ navigation }) {
     const name = item.name || (item.employee ? item.employee.name : 'UNKNOWN');
     const id = item.employee_id || '0000';
     
-    // Fallback initials if needed, but we'll try to show the face
+    // Parse embedding
+    let embeddingArray = [];
+    if (item.embedding) {
+      try {
+        embeddingArray = JSON.parse(item.embedding);
+        if (Array.isArray(embeddingArray) && Array.isArray(embeddingArray[0])) {
+          embeddingArray = embeddingArray[0];
+        }
+      } catch (e) {}
+    }
+
     const initials = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
 
     return (
-      <View style={[styles.gridCard, { borderColor: theme.border }]}>
-        <View style={[styles.cardTop, { backgroundColor: theme.bg }]}>
+      <View style={[styles.listCard, { borderColor: theme.border }]}>
+        <View style={styles.cardHeader}>
           {item.thumbnail_path ? (
             <Image 
               source={{ uri: item.thumbnail_path }} 
@@ -85,12 +107,25 @@ export default function UserListScreen({ navigation }) {
                <Text style={styles.avatarInitials}>{initials}</Text>
             </View>
           )}
-          <View style={[styles.statusDot, { backgroundColor: theme.color }]} />
+          <View style={styles.cardInfo}>
+            <Text style={styles.cardName} numberOfLines={1}>{name}</Text>
+            <Text style={styles.cardId}>ID: {id}</Text>
+            {activeTab !== 'enrolled' && (
+              <Text style={[styles.cardId, { color: theme.color, fontWeight: 'bold', marginTop: 2 }]}>
+                {item.confidence ? 'Match Confidence: ' + parseFloat(item.confidence).toFixed(1) + '%' : 'N/A'}
+              </Text>
+            )}
+          </View>
         </View>
-        <View style={styles.cardBottom}>
-          <Text style={styles.cardName} numberOfLines={1}>{name}</Text>
-          <Text style={styles.cardId}>{id}</Text>
-        </View>
+
+        {activeTab === 'enrolled' && (
+          <View style={styles.hashContainer}>
+            <Text style={styles.hashTitle}>192-D MobileFaceNet Embedding (First 8):</Text>
+            <Text style={styles.hashText}>
+              [{embeddingArray.slice(0, 8).map(v => (typeof v === 'number' ? v : Number(v) || 0).toFixed(4)).join(', ')}...]
+            </Text>
+          </View>
+        )}
       </View>
     );
   };
@@ -98,7 +133,6 @@ export default function UserListScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-        {/* Header */}
         <View style={styles.header}>
           <View style={{flexDirection: 'row', alignItems: 'center'}}>
             <TouchableOpacity style={styles.backBtn} onPress={() => navigation?.goBack()}>
@@ -125,7 +159,6 @@ export default function UserListScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* Summary Boxes / Tabs */}
         <View style={styles.summaryContainer}>
           <TouchableOpacity 
             style={[styles.summaryBox, activeTab === 'enrolled' ? { borderColor: '#F59E0B', backgroundColor: '#FEF3C7' } : null]} 
@@ -152,14 +185,13 @@ export default function UserListScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* Grid List */}
         <FlatList
+          key="list-1col"
           data={data}
           keyExtractor={(item, index) => item.id ? item.id.toString() : index.toString()}
           renderItem={renderCard}
-          numColumns={3}
+          numColumns={1}
           contentContainerStyle={styles.listContainer}
-          columnWrapperStyle={styles.columnWrapper}
           ListEmptyComponent={<Text style={styles.emptyText}>No records found.</Text>}
         />
       </View>
@@ -244,35 +276,29 @@ const styles = StyleSheet.create({
   listContainer: {
     padding: 12,
   },
-  columnWrapper: {
-    justifyContent: 'flex-start',
-  },
   emptyText: {
     textAlign: 'center',
     marginTop: 40,
     color: '#64748B',
     fontSize: 14,
   },
-  gridCard: {
-    flex: 1,
-    margin: 4,
+  listCard: {
+    marginBottom: 12,
     backgroundColor: '#FFF',
     borderRadius: 12,
     borderWidth: 1,
-    overflow: 'hidden',
-    maxWidth: '32%',
+    padding: 16,
   },
-  cardTop: {
-    paddingVertical: 16,
+  cardHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
   },
   avatarImg: {
     width: 60,
     height: 60,
     borderRadius: 30,
     borderWidth: 3,
+    marginRight: 15,
   },
   avatarPlaceholder: {
     alignItems: 'center',
@@ -283,28 +309,34 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
   },
-  statusDot: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    borderWidth: 2,
-    borderColor: '#FFF',
-  },
-  cardBottom: {
-    padding: 8,
-    backgroundColor: '#FFF',
+  cardInfo: {
+    flex: 1,
   },
   cardName: {
-    fontSize: 13,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#1E293B',
-    marginBottom: 2,
+    marginBottom: 4,
   },
   cardId: {
-    fontSize: 11,
-    color: '#94A3B8',
+    fontSize: 14,
+    color: '#64748B',
+  },
+  hashContainer: {
+    backgroundColor: '#000',
+    padding: 10,
+    borderRadius: 6,
+    marginTop: 12,
+  },
+  hashTitle: {
+    color: '#00FF00',
+    fontSize: 10,
+    fontFamily: 'monospace',
+    marginBottom: 4,
+  },
+  hashText: {
+    color: '#00FF00',
+    fontSize: 10,
+    fontFamily: 'monospace',
   }
 });

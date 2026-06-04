@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Animated, SafeAreaView } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Animated, SafeAreaView, Easing } from 'react-native';
 import Svg, { Path, Ellipse, Rect } from 'react-native-svg';
 import CameraView from '../components/CameraView';
 import NHAIFaceSDK from '../NHAIFaceSDK';
@@ -23,6 +23,31 @@ export default function VerifyScreen({ navigation }) {
   const progressIntervalRef = useRef(null);
   const confidenceAnim = useRef(new Animated.Value(0)).current;
   const isMountedRef = useRef(true);
+
+  // Processing animations
+  const spinAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (isProcessing) {
+      Animated.loop(
+        Animated.timing(spinAnim, { toValue: 1, duration: 1200, easing: Easing.linear, useNativeDriver: true })
+      ).start();
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.06, duration: 500, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+        ])
+      ).start();
+    } else {
+      spinAnim.setValue(0);
+      pulseAnim.setValue(1);
+    }
+  }, [isProcessing]);
+
+  const spinInterpolate = spinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -100,7 +125,7 @@ export default function VerifyScreen({ navigation }) {
                   
                   setDetectedFace({ bbox: currentBbox, landmarks: currentLandmarks, color: targetColor });
                   setMatchData(result);
-                  setMatchStatus(result.status === 'MATCH' || result.status === 'LOW_CONFIDENCE' ? result.status : (result.status === 'REJECTED_SPOOF' ? 'SPOOF_REJECTED' : 'UNKNOWN'));
+                  setMatchStatus(result.status === 'MATCH' ? 'MATCHED' : (result.status === 'LOW_CONFIDENCE' ? 'LOW_CONFIDENCE' : (result.status === 'REJECTED_SPOOF' ? 'SPOOF_REJECTED' : 'UNKNOWN')));
 
                   if (result.status === 'MATCH' || result.status === 'LOW_CONFIDENCE') {
                     Animated.timing(confidenceAnim, { toValue: parseFloat(result.confidence || 0), duration: 800, useNativeDriver: false }).start();
@@ -178,6 +203,7 @@ export default function VerifyScreen({ navigation }) {
     );
   }
 
+  // ─── CAMERA AND VERIFICATION FLOW ──────────────────────────
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
@@ -281,7 +307,7 @@ const styles = StyleSheet.create({
   floatingBackBtn: { position: 'absolute', top: 16, left: 20, width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', zIndex: 10 },
   floatingBackArrow: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
   
-  resultContainer: { paddingVertical: 20, paddingHorizontal: 24, backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, marginTop: -16, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 6 },
+  resultContainer: { flex: 1, paddingVertical: 20, paddingHorizontal: 24, backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, marginTop: -16, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 6 },
   searchingWrapper: { justifyContent: 'center', alignItems: 'center', paddingVertical: 10 },
   searchingText: { fontSize: 18, fontFamily: 'Inter-Bold', color: '#0A1F44', marginBottom: 8, textAlign: 'center' },
   searchingSubtext: { fontSize: 13, fontFamily: 'Inter-Regular', color: '#6B7280', textAlign: 'center', paddingHorizontal: 20 },

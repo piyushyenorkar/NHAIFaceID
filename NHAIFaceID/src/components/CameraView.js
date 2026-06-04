@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } f
 import { StyleSheet, Text, View, Dimensions, TouchableOpacity } from 'react-native';
 import { Camera, useCameraDevice, useCameraFormat, useFrameProcessor, runAsync } from 'react-native-vision-camera';
 import Svg, { Line, Circle, Text as SvgText, Path } from 'react-native-svg';
-import { useFaceDetector } from 'react-native-vision-camera-face-detector';
+import { detectFaces } from 'react-native-vision-camera-face-detector';
 import { useRunOnJS } from 'react-native-worklets-core';
 
 const { width, height } = Dimensions.get('window');
@@ -315,8 +315,6 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
     classificationMode: 'all',
   }).current;
 
-  const { detectFaces } = useFaceDetector(faceDetectionOptions);
-
   const format = useCameraFormat(device, [
     { fps: 30 },
     { videoResolution: { width: 1280, height: 720 } }
@@ -415,7 +413,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
     runAsync(frame, () => {
       'worklet';
       // Run MLKit face detection via frame processor plugin
-      const result = detectFaces(frame);
+      const result = detectFaces(frame, faceDetectionOptions);
 
       // DIAGNOSTIC: dump raw result structure (throttled)
       if (frameCount.current % 60 === 1) {

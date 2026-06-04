@@ -124,7 +124,7 @@ dependencies {
     implementation("com.facebook.react:react-android")
 
     // TensorFlow Lite for native face recognition inference (MobileFaceNet)
-    implementation("com.google.ai.edge.litert:litert:1.4.0")
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")
 
     // EXIF metadata reader — required to properly orient photos before face crop
     implementation("androidx.exifinterface:exifinterface:1.3.7")
