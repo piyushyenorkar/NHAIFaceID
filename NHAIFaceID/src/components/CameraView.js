@@ -580,6 +580,21 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
       {/* Center Oval Guide Overlay */}
       {isActive && (
         <Svg width="100%" height="100%" style={[StyleSheet.absoluteFill, { zIndex: 10 }]} pointerEvents="none">
+          <Defs>
+            <Mask id="ovalMask" x="0" y="0" width="100%" height="100%">
+              <Rect x="0" y="0" width="100%" height="100%" fill="white" />
+              <Ellipse
+                cx={layoutDims.w / 2}
+                cy={layoutDims.h * 0.42}
+                rx={layoutDims.w * 0.32}
+                ry={layoutDims.h * 0.26}
+                fill="black"
+              />
+            </Mask>
+          </Defs>
+          
+          <Rect x="0" y="0" width="100%" height="100%" fill="rgba(10, 15, 29, 0.75)" mask="url(#ovalMask)" />
+
           <Ellipse
             cx={layoutDims.w / 2}
             cy={layoutDims.h * 0.42}
@@ -624,7 +639,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
             {
               left: pt.x,
               top: pt.y,
-              backgroundColor: activeColor === '#00FF00' || activeColor === '#28a745' ? '#FFD700' : '#FFF'
+              backgroundColor: (activeColor === '#00FF00' || activeColor === '#28a745' || activeColor === '#10B981') ? 'rgba(0, 229, 255, 0.4)' : 'rgba(255, 255, 255, 0.2)'
             }
           ]}
         />
@@ -681,13 +696,13 @@ const styles = StyleSheet.create({
   },
   meshDot: {
     position: 'absolute',
-    width: 3.5,
-    height: 3.5,
-    borderRadius: 1.75,
-    opacity: 0.75,
-    shadowColor: '#FFD700',
+    width: 2.5,
+    height: 2.5,
+    borderRadius: 1.25,
+    opacity: 0.6,
+    shadowColor: '#00E5FF',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
+    shadowOpacity: 0.4,
     shadowRadius: 1,
   },
   switchButton: {
