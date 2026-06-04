@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { StyleSheet, Text, View, Dimensions, TouchableOpacity } from 'react-native';
 import { Camera, useCameraDevice, useCameraFormat, useFrameProcessor, runAsync } from 'react-native-vision-camera';
-import Svg, { Line, Circle, Text as SvgText } from 'react-native-svg';
+import Svg, { Line, Circle, Text as SvgText, Path } from 'react-native-svg';
 import { useFaceDetector } from 'react-native-vision-camera-face-detector';
 import { useRunOnJS } from 'react-native-worklets-core';
 
@@ -630,14 +630,29 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
       )}
 
       <TouchableOpacity style={styles.switchButton} onPress={toggleCamera}>
-        <Text style={styles.switchIcon}>🔄</Text>
-        <Text style={styles.switchText}>{cameraPosition === 'front' ? 'Front' : 'Back'}</Text>
+        <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5">
+          <Path d="M4 12v-3a3 3 0 0 1 3 -3h13m-3 -3l3 3l-3 3" />
+          <Path d="M20 12v3a3 3 0 0 1 -3 3h-13m3 3l-3 -3l3 -3" />
+        </Svg>
+        <Text style={styles.switchText}>Flip</Text>
       </TouchableOpacity>
 
-      <View style={styles.textOverlay}>
-        <Text style={[styles.guidanceText, { color: activeColor === 'gray' ? 'white' : activeColor }]}>
-          {detectedFace ? 'Biometric Alignment complete' : 'Align face inside guides...'}
-        </Text>
+      <View style={styles.infoCardWrapper}>
+        <View style={[styles.infoCard, { borderTopColor: activeColor === 'gray' ? '#3B82F6' : activeColor }]}>
+          <View style={styles.infoCardHeader}>
+            <Svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={activeColor === 'gray' ? '#3B82F6' : activeColor} strokeWidth="2.5" style={{ marginRight: 8 }}>
+              {activeColor === '#00FF00' || activeColor === '#28a745' || activeColor === '#10B981' ? (
+                <Path d="M5 12l5 5l10 -10" />
+              ) : (
+                <Path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0 M12 8v4l3 3" />
+              )}
+            </Svg>
+            <Text style={styles.infoCardTitle}>
+              {detectedFace ? 'Alignment Complete' : 'Align face inside guides'}
+            </Text>
+          </View>
+          <Text style={styles.infoCardSub}>Please hold steady in well-lit area</Text>
+        </View>
       </View>
     </View>
   );
@@ -671,46 +686,61 @@ const styles = StyleSheet.create({
   },
   switchButton: {
     position: 'absolute',
-    top: 40,
-    left: 20,
-    backgroundColor: 'rgba(0, 48, 135, 0.85)',
+    top: 50,
+    right: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)', // Clean semi-transparent dark background
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: '#FFD700',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  switchIcon: {
-    fontSize: 16,
-    marginRight: 6,
+    paddingHorizontal: 16,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)', // Very subtle glass border
   },
   switchText: {
-    color: '#FFD700',
-    fontSize: 12,
-    fontWeight: 'bold',
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
+    letterSpacing: 0.5,
   },
-  textOverlay: {
+  infoCardWrapper: {
     position: 'absolute',
     bottom: 50,
     width: '100%',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 48, 135, 0.7)',
-    paddingVertical: 12,
+    paddingHorizontal: 24,
   },
-  guidanceText: {
-    fontSize: 24,
-    fontWeight: 'bold',
+  infoCard: {
+    backgroundColor: '#FFFFFF',
+    width: '100%',
+    borderRadius: 16,
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 10,
+    borderTopWidth: 4,
+  },
+  infoCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  infoCardTitle: {
+    fontSize: 18,
+    fontWeight: '800',
     textAlign: 'center',
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: { width: -1, height: 1 },
-    textShadowRadius: 10,
+    color: '#0A1F44',
+  },
+  infoCardSub: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontWeight: '600',
+    textAlign: 'center',
   }
 });
 

@@ -98,7 +98,7 @@ export default function BenchmarkScreen({ navigation }) {
             </View>
 
             {/* Processing Speed Card */}
-            <View style={styles.card}>
+            <View style={[styles.card, { padding: 14 }]}>
               <View style={styles.cardHeader}>
                 <Svg width="14" height="14" viewBox="0 0 24 24" strokeWidth="2" stroke="#9CA3AF" fill="none">
                   <Path d="M4 19l16 0" />
@@ -108,9 +108,9 @@ export default function BenchmarkScreen({ navigation }) {
               </View>
               
               <View style={styles.barsContainer}>
-                <ProgressBar label="BlazeFace" value={results?.speed?.faceDetection} max={183} color="#0A1F44" />
+                <ProgressBar label="BlazeFace" value={results?.speed?.faceDetection} max={183} color="#3B82F6" />
                 <ProgressBar label="Liveness" value={results?.speed?.liveness} max={183} color="#F59E0B" />
-                <ProgressBar label="FaceNet" value={results?.speed?.embedding} max={183} color="#0A1F44" />
+                <ProgressBar label="FaceNet" value={results?.speed?.embedding} max={183} color="#8B5CF6" />
                 <ProgressBar label="SQLite" value={results?.speed?.sqlite} max={183} color="#10B981" />
               </View>
 
@@ -202,7 +202,7 @@ export default function BenchmarkScreen({ navigation }) {
             {/* No spacer, naturally flow to export button with consistent gap */}
             
             <TouchableOpacity style={styles.exportBtn} onPress={exportReport} activeOpacity={0.8}>
-              <Svg width="18" height="18" viewBox="0 0 24 24" strokeWidth="2.5" stroke="#F5C40A" fill="none" style={{ marginRight: 8 }}>
+              <Svg width="18" height="18" viewBox="0 0 24 24" strokeWidth="2.5" stroke="#334155" fill="none" style={{ marginRight: 8 }}>
                 <Path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2" />
                 <Polyline points="7 11 12 16 17 11" />
                 <Path d="M12 4v12" />
@@ -272,16 +272,16 @@ const styles = StyleSheet.create({
   topMetricsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: 15,
   },
   metricCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F8FAFC',
     flex: 0.48,
     borderRadius: 12,
-    paddingVertical: 14,
+    paddingVertical: 10,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#E2E8F0',
   },
   metricMain: {
     fontSize: 26,
@@ -290,18 +290,18 @@ const styles = StyleSheet.create({
   },
   metricSub: {
     fontSize: 12,
-    color: '#9CA3AF',
+    color: '#4B5563',
     marginTop: 2,
     letterSpacing: 0.5,
-    fontWeight: '600',
+    fontWeight: '800',
   },
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F8FAFC',
     borderRadius: 12,
-    padding: 14,
-    marginBottom: 8,
+    padding: 10,
+    marginBottom: 15,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#E2E8F0',
   },
   cardHeader: {
     flexDirection: 'row',
@@ -309,9 +309,9 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   cardTitle: {
-    fontSize: 11,
-    color: '#6B7280',
-    fontWeight: '700',
+    fontSize: 13,
+    color: '#374151',
+    fontWeight: '900',
     letterSpacing: 1,
     marginLeft: 6,
   },
@@ -414,7 +414,7 @@ const styles = StyleSheet.create({
   },
   // Export Button
   exportBtn: {
-    backgroundColor: '#0A1F44', // Navy
+    backgroundColor: '#DBE2EB',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -424,7 +424,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   exportBtnText: {
-    color: '#F5C40A', // Yellow text
+    color: '#334155',
     fontSize: 15,
     fontWeight: 'bold',
   }
