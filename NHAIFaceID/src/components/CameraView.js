@@ -303,7 +303,7 @@ export function getFaceMesh468(box, contours = null) {
   return landmarks;
 }
 
-const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace = null }, ref) => {
+const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace = null, flipButtonStyle, hideInfoCard = false }, ref) => {
   const camera = useRef(null);
   const [cameraPosition, setCameraPosition] = useState('front');
   const device = useCameraDevice(cameraPosition);
@@ -629,7 +629,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         </Svg>
       )}
 
-      <TouchableOpacity style={styles.switchButton} onPress={toggleCamera}>
+      <TouchableOpacity style={[styles.switchButton, flipButtonStyle]} onPress={toggleCamera}>
         <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5">
           <Path d="M4 12v-3a3 3 0 0 1 3 -3h13m-3 -3l3 3l-3 3" />
           <Path d="M20 12v3a3 3 0 0 1 -3 3h-13m3 3l-3 -3l3 -3" />
@@ -637,6 +637,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         <Text style={styles.switchText}>Flip</Text>
       </TouchableOpacity>
 
+      {!hideInfoCard && (
       <View style={styles.infoCardWrapper}>
         <View style={[styles.infoCard, { borderTopColor: activeColor === 'gray' ? '#3B82F6' : activeColor }]}>
           <View style={styles.infoCardHeader}>
@@ -654,6 +655,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
           <Text style={styles.infoCardSub}>Please hold steady in well-lit area</Text>
         </View>
       </View>
+      )}
     </View>
   );
 });
