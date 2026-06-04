@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, Switch, Animated, Easing, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, Switch, Animated, Easing, ActivityIndicator, ScrollView } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import Svg, { Path } from 'react-native-svg';
 import RNFS from 'react-native-fs';
@@ -510,10 +510,18 @@ export default function EnrollScreen({ navigation }) {
               </View>
             </View>
 
-            <View style={styles.formContent}>
+            <ScrollView contentContainerStyle={styles.formScrollContent} keyboardShouldPersistTaps="handled" bounces={false}>
               <View style={styles.glassCard}>
                 <View style={styles.iconCircle}>
-                  <Text style={styles.iconText}>👤</Text>
+                  <Svg width="36" height="36" viewBox="0 0 24 24" strokeWidth="2" stroke="#2563EB" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                    <Path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                    <Path d="M10 9a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+                    <Path d="M4 8v-2a2 2 0 0 1 2 -2h2" />
+                    <Path d="M4 16v2a2 2 0 0 0 2 2h2" />
+                    <Path d="M16 4h2a2 2 0 0 1 2 2v2" />
+                    <Path d="M16 20h2a2 2 0 0 0 2 -2v-2" />
+                    <Path d="M8 16a2 2 0 0 1 2 -2h4a2 2 0 0 1 2 2" />
+                  </Svg>
                 </View>
                 <Text style={styles.formTitle}>Employee Details</Text>
                 <Text style={styles.formSubtitle}>Enter credentials to begin biometric scan</Text>
@@ -544,7 +552,7 @@ export default function EnrollScreen({ navigation }) {
                   <Text style={styles.startBtnText}>Save & Scan Face</Text>
                 </TouchableOpacity>
               </View>
-            </View>
+            </ScrollView>
           </View>
         )}
 
@@ -583,23 +591,7 @@ export default function EnrollScreen({ navigation }) {
           </TouchableOpacity>
         )}
 
-        {/* Dev Options */}
-        {enrollStatus === 'SCANNING' && (
-          <View style={styles.floatingDevBar}>
-            <View style={styles.devToggle}>
-              <Text style={styles.devLabel}>Bypass Pose</Text>
-              <Switch
-                value={bypassPoseCheck}
-                onValueChange={toggleBypassPoseCheck}
-                trackColor={{ false: 'rgba(255,255,255,0.15)', true: '#10B981' }}
-                thumbColor="#fff"
-              />
-            </View>
-            <TouchableOpacity style={styles.forceCaptureBtn} onPress={forceCaptureStage}>
-              <Text style={styles.forceCaptureBtnText}>Force {enrollStage}</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+
 
         {/* Scanning Overlay (Glassmorphism) */}
         {enrollStatus === 'SCANNING' && (
@@ -708,6 +700,11 @@ const styles = StyleSheet.create({
     padding: 24,
     justifyContent: 'center',
   },
+  formScrollContent: {
+    flexGrow: 1,
+    padding: 24,
+    paddingTop: 60, // Fixed padding so it doesn't shift upwards when keyboard opens
+  },
   glassCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 24,
@@ -767,19 +764,19 @@ const styles = StyleSheet.create({
   },
   startBtn: {
     width: '100%',
-    backgroundColor: '#2563EB',
+    backgroundColor: '#0A1F44',
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 12,
-    shadowColor: '#2563EB',
+    shadowColor: '#0A1F44',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.2,
     shadowRadius: 10,
     elevation: 6,
   },
   startBtnText: {
-    color: '#FFFFFF',
+    color: '#F5C40A',
     fontSize: 16,
     fontWeight: '700',
     letterSpacing: 0.5,
