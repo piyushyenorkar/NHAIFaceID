@@ -76,6 +76,7 @@ export default function EnrollScreen({ navigation }) {
   const latestEmbeddingRef = useRef(null);
   const latestLandmarksRef = useRef(null);
   const latestBboxRef = useRef(null);
+  const latestFrameInfoRef = useRef(null);
 
   const startEnrollment = () => {
     if (!employeeId.trim() || !name.trim()) {
@@ -93,7 +94,7 @@ export default function EnrollScreen({ navigation }) {
     setEnrollStatus('SCANNING');
   };
 
-  const handleFaceDetected = (bbox, landmarks, embedding) => {
+  const handleFaceDetected = (bbox, landmarks, embedding, frameInfo) => {
     if (enrollStatus !== 'SCANNING') return;
     
     if (bbox && landmarks) {
@@ -116,6 +117,7 @@ export default function EnrollScreen({ navigation }) {
         lastDetectedRef.current = Date.now();
         latestLandmarksRef.current = landmarks;
         latestBboxRef.current = bbox;
+        latestFrameInfoRef.current = frameInfo;
         if (embedding) {
           latestEmbeddingRef.current = embedding;
         }
@@ -219,6 +221,7 @@ export default function EnrollScreen({ navigation }) {
                           setDetectedFace({
                             bbox: finalBbox,
                             landmarks: finalLandmarks,
+                            frameInfo: latestFrameInfoRef.current,
                             color: '#10B981'
                           });
                           
