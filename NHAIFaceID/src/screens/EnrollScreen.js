@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, Switch, Animated, Easing, ActivityIndicator } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
+import Svg, { Path } from 'react-native-svg';
 import RNFS from 'react-native-fs';
 import CameraView from '../components/CameraView';
 import NHAIFaceSDK from '../NHAIFaceSDK';
@@ -9,6 +11,12 @@ import { calculateLandmarksVariance, estimatePoseAngle } from '../services/liven
 
 
 export default function EnrollScreen({ navigation }) {
+  const isFocused = useIsFocused();
+
+  useLayoutEffect(() => {
+    navigation.setOptions({ headerShown: false });
+  }, [navigation]);
+
   const [employeeId, setEmployeeId] = useState('');
   const [name, setName] = useState('');
   const [enrollStatus, setEnrollStatus] = useState('IDLE'); // IDLE, SCANNING, PROCESSING, SUCCESS
@@ -480,7 +488,7 @@ export default function EnrollScreen({ navigation }) {
       <View style={styles.cameraWrapper}>
         <CameraView
           ref={cameraViewRef}
-          isActive={true} // Always active so it shows beautifully in the background
+          isActive={isFocused}
           onFaceDetected={enrollStatus === 'SCANNING' ? handleFaceDetected : undefined}
           detectedFace={detectedFace}
         />
@@ -488,13 +496,17 @@ export default function EnrollScreen({ navigation }) {
         {/* ─── IDLE (FORM) OVERLAY ──────────────────────────────────────── */}
         {enrollStatus === 'IDLE' && (
           <View style={styles.modalOverlay}>
-            <View style={styles.idleHeader}>
-              <TouchableOpacity onPress={() => navigation.goBack()} style={styles.idleBackBtn}>
-                <Text style={styles.idleBackArrow}>‹</Text>
+            <View style={styles.header}>
+              <TouchableOpacity style={styles.backBtn} onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Home')}>
+                <Svg width="18" height="18" viewBox="0 0 24 24" strokeWidth="2.5" stroke="#F5C40A" fill="none">
+                  <Path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                  <Path d="M5 12l14 0" />
+                  <Path d="M5 12l6 6" />
+                  <Path d="M5 12l6 -6" />
+                </Svg>
               </TouchableOpacity>
-              <View>
-                <Text style={styles.idleHeaderTitle}>New Enrollment</Text>
-                <Text style={styles.idleHeaderSub}>NHAI DATALAKE 3.0</Text>
+              <View style={styles.headerTitles}>
+                <Text style={styles.headerTitle}>Enroll Personnel</Text>
               </View>
             </View>
 
@@ -663,45 +675,33 @@ const styles = StyleSheet.create({
   // ─── IDLE (FORM) LAYOUT ────────────────────────────────
   modalOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(249, 250, 251, 0.85)', // Light translucent overlay over camera
+    backgroundColor: '#FFFFFF',
     zIndex: 20,
   },
-  idleHeader: {
+  header: {
+    backgroundColor: '#0A1F44',
+    paddingTop: 14,
+    paddingHorizontal: 20,
+    paddingBottom: 18,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 50,
-    paddingBottom: 20,
-    paddingHorizontal: 24,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderColor: '#E5E7EB',
   },
-  idleBackBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F3F4F6',
-    justifyContent: 'center',
-    alignItems: 'center',
+  backBtn: {
+    borderWidth: 1,
+    borderColor: '#4B5563', // Muted border
+    borderRadius: 8,
+    padding: 8,
     marginRight: 16,
+    marginTop: 0,
   },
-  idleBackArrow: {
-    color: '#111827',
-    fontSize: 28,
-    fontWeight: '300',
-    marginTop: -4,
+  headerTitles: {
+    flex: 1,
   },
-  idleHeaderTitle: {
-    color: '#111827',
-    fontSize: 22,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  idleHeaderSub: {
-    color: '#6B7280',
-    fontSize: 12,
-    letterSpacing: 1,
-    marginTop: 2,
+  headerTitle: {
+    color: '#F5C40A',
+    fontSize: 20,
+    fontWeight: 'bold',
+    fontFamily: 'Inter-Bold',
   },
   formContent: {
     flex: 1,
