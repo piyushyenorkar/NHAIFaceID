@@ -27,3 +27,6 @@ yarn-error.log*
 
 # Lockfiles from outer directories
 package-lock.json
+
+# Extracted APK artifacts
+apk_contents/
