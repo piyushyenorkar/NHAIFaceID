@@ -3,7 +3,7 @@
  * 
  * PRIMARY PATH: Native Kotlin MobileFaceNet TFLite module (FaceRecognitionModule)
  * - Runs MobileFaceNet directly via TensorFlow Lite Android SDK in native Kotlin
- * - 128-D L2-normalized face embeddings
+ * - 192-D L2-normalized face embeddings
  * - ~30ms inference time on modern Android devices
  * 
  * NO FALLBACK: If the native module or image is unavailable, an error is returned.
@@ -67,7 +67,7 @@ export async function alignAndCropFace(image, bbox, landmarks = null) {
 }
 
 /**
- * Generates a REAL 128-dimensional L2-normalized face embedding using 
+ * Generates a REAL 192-dimensional L2-normalized face embedding using 
  * the native MobileFaceNet TFLite model.
  * 
  * NO FALLBACK. If the model or image is unavailable, returns null with an error log.
@@ -134,7 +134,7 @@ export async function generateEmbedding(croppedFace) {
 }
 
 /**
- * Computes cosine similarity between two 128-D embeddings.
+ * Computes cosine similarity between two 192-D embeddings.
  * Uses the native module for precision, with JS fallback.
  * 
  * @param {number[]} emb1 
@@ -146,7 +146,7 @@ export async function computeCosineSimilarity(emb1, emb2) {
     return 0;
   }
 
-  // JS implementation (fast enough for 128-D vectors)
+  // JS implementation (fast enough for 192-D vectors)
   let dot = 0, norm1 = 0, norm2 = 0;
   for (let i = 0; i < emb1.length; i++) {
     const a = typeof emb1[i] === 'number' ? emb1[i] : 0;
