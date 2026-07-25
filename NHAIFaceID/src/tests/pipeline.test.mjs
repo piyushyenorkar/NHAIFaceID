@@ -23,8 +23,8 @@ console.log('====================================================\n');
 // TEST CASE 1: L2-Normalized Vectors and Dot Product Match
 // ----------------------------------------------------
 console.log('Test Case 1: L2-Normalized Vectors & Cosine Matching...');
-const vecA = new Array(128).fill(0).map(() => Math.random() * 2 - 1);
-const vecB = new Array(128).fill(0).map(() => Math.random() * 2 - 1);
+const vecA = new Array(192).fill(0).map(() => Math.random() * 2 - 1);
+const vecB = new Array(192).fill(0).map(() => Math.random() * 2 - 1);
 
 const normA = Math.sqrt(vecA.reduce((sum, v) => sum + v*v, 0));
 const L2_vecA = vecA.map(v => v / normA);
