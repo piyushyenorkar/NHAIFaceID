@@ -78,8 +78,17 @@ export async function alignAndCropFace(image, bbox, landmarks = null) {
 export async function generateEmbedding(croppedFace) {
   const start = Date.now();
 
-  if (!isNativeModuleReady || !FaceRecognitionModule) {
-    console.error('[FaceRecognition] Cannot generate embedding: native module not initialized');
+  if (!isNativeModuleReady) {
+    console.warn('[FaceRecognition] Native module not ready yet, attempting to initialize...');
+    const initialized = await initFaceRecognition();
+    if (!initialized) {
+      console.error('[FaceRecognition] Cannot generate embedding: native module failed to initialize');
+      return null;
+    }
+  }
+
+  if (!FaceRecognitionModule) {
+    console.error('[FaceRecognition] Cannot generate embedding: native module missing');
     return null;
   }
 
