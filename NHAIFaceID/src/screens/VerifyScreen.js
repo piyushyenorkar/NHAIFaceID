@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Animated, SafeAreaView, Easing } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
 import Svg, { Path, Ellipse, Rect } from 'react-native-svg';
 import CameraView from '../components/CameraView';
 import NHAIFaceSDK from '../NHAIFaceSDK';
@@ -10,6 +11,7 @@ export default function VerifyScreen({ navigation }) {
     navigation.setOptions({ headerShown: false });
   }, [navigation]);
 
+  const isFocused = useIsFocused();
   const [matchStatus, setMatchStatus] = useState('SEARCHING'); // SEARCHING, MATCHED, LOW_CONFIDENCE, UNKNOWN, SPOOF_REJECTED, NO_ENROLLED
   const [matchData, setMatchData] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -212,7 +214,7 @@ export default function VerifyScreen({ navigation }) {
         <View style={[styles.cameraWrapper, { borderColor: matchStatus !== 'SEARCHING' ? (matchStatus === 'MATCHED' ? '#10B981' : (matchStatus === 'LOW_CONFIDENCE' ? '#F59E0B' : '#EF4444')) : 'transparent', borderWidth: matchStatus !== 'SEARCHING' ? 4 : 0 }]}>
           <CameraView 
             ref={cameraViewRef} 
-            isActive={matchStatus === 'SEARCHING'} 
+            isActive={isFocused && matchStatus === 'SEARCHING'} 
             onFaceDetected={handleFaceDetected} 
             detectedFace={detectedFace}
             flipButtonStyle={{ top: 16, right: 20 }}
