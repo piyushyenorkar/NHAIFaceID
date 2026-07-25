@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { StyleSheet, Text, View, Dimensions, TouchableOpacity } from 'react-native';
-import { Camera, useCameraDevice, useCameraFormat, useFrameProcessor, runAsync } from 'react-native-vision-camera';
+import { Camera, useCameraDevice, useCameraFormat, useFrameProcessor, runAsync, VisionCameraProxy } from 'react-native-vision-camera';
 import Svg, { Line, Circle, Text as SvgText, Path } from 'react-native-svg';
-import { detectFaces } from 'react-native-vision-camera-face-detector';
-import { useRunOnJS } from 'react-native-worklets-core';
+// import { detectFaces } from 'react-native-vision-camera-face-detector'; // Removed because we use VisionCameraProxy
+import { useRunOnJS, useSharedValue } from 'react-native-worklets-core';
+
+const faceDetectorPlugin = VisionCameraProxy.initFrameProcessorPlugin('detectFaces');
 
 const { width, height } = Dimensions.get('window');
 
@@ -315,10 +317,9 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
     classificationMode: 'all',
   }).current;
 
-  const format = useCameraFormat(device, [
-    { fps: 30 },
-    { videoResolution: { width: 1280, height: 720 } }
-  ]);
+  // Removed strict format constraint as it causes 'unknown camera' crashes on many emulators.
+  // VisionCamera will automatically select the best format.
+  const format = undefined;
 
   const [hasPermission, setHasPermission] = useState(false);
   const [layoutDims, setLayoutDims] = useState({ w: width, h: height });
@@ -343,8 +344,16 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
   useImperativeHandle(ref, () => ({
     async capturePhoto() {
       if (camera.current) {
-        const photo = await camera.current.takePhoto({ flash: 'off', enableShutterSound: false });
-        return photo.path;
+        try {
+          // Use takeSnapshot instead of takePhoto to prevent Android camera session
+          // from crashing/closing when a frame processor is running concurrently.
+          const photo = await camera.current.takeSnapshot({ quality: 90 });
+          return photo.path;
+        } catch (e) {
+          console.error('[CameraView] takeSnapshot failed, falling back to takePhoto:', e);
+          const photo = await camera.current.takePhoto({ flash: 'off', enableShutterSound: false });
+          return photo.path;
+        }
       }
       return null;
     }
@@ -357,7 +366,8 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
     })();
   }, []);
 
-  const frameCount = useRef(0);
+  const frameCount = useSharedValue(0);
+  const lastProcessTime = useSharedValue(0);
   const lastUIUpdateRef = useRef(0);
 
   const handleFaceResult = (box, contours, faceMetrics = null, frameDims = null) => {
@@ -408,15 +418,21 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
     'worklet';
     if (!isActive) return;
 
-    frameCount.current += 1;
+    // THROTTLE: Only process 5-6 frames per second to prevent camera daemon crash / queue explosion
+    const now = Date.now();
+    if (now - lastProcessTime.value < 160) {
+      return;
+    }
+    lastProcessTime.value = now;
+    frameCount.value += 1;
 
     runAsync(frame, () => {
       'worklet';
       // Run MLKit face detection via frame processor plugin
-      const result = detectFaces(frame, faceDetectionOptions);
+      const result = faceDetectorPlugin.call(frame, faceDetectionOptions);
 
       // DIAGNOSTIC: dump raw result structure (throttled)
-      if (frameCount.current % 60 === 1) {
+      if (frameCount.value % 60 === 1) {
         const resultType = typeof result;
         const isArr = Array.isArray(result);
         const resultKeys = result && typeof result === 'object' ? Object.keys(result) : [];
@@ -443,7 +459,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         const face = faces[0];
 
         // DIAGNOSTIC: dump face object keys and values (throttled)
-        if (frameCount.current % 60 === 2) {
+        if (frameCount.value % 60 === 2) {
           const faceKeys = Object.keys(face);
           const sample = {};
           for (const k of faceKeys) {
@@ -510,7 +526,7 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         // Pass both contours, face metrics, AND frame dimensions to the JS thread
         runHandleFaceResult(normalizedBox, normalizedContours, faceMetrics, { fw, fh });
       } else {
-        if (frameCount.current % 5 === 0) {
+        if (frameCount.value % 5 === 0) {
           runHandleNoFace();
         }
       }
@@ -576,8 +592,6 @@ const CameraView = forwardRef(({ onFaceDetected, isActive = true, detectedFace =
         format={format}
         frameProcessor={frameProcessor}
         pixelFormat="yuv"
-        lowLightBoost={device?.supportsLowLightBoost}
-        exposure={exposureValue}
       />
       
       {activeBox && (
