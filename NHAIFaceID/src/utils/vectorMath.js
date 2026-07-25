@@ -39,8 +39,8 @@ export function magnitude(v) {
  * 
  * Formula: dot(A, B) / (|A| * |B|)
  * 
- * @param {number[]} vecA - First vector (e.g. 128-d embedding)
- * @param {number[]} vecB - Second vector (e.g. 128-d embedding)
+ * @param {number[]} vecA - First vector (e.g. 192-d embedding)
+ * @param {number[]} vecB - Second vector (e.g. 192-d embedding)
  * @returns {number} Cosine similarity score (1.0 = identical)
  */
 export function cosineSimilarity(vecA, vecB) {
