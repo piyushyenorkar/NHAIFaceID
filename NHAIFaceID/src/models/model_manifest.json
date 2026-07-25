@@ -5,7 +5,7 @@
       "filename": "MobileFaceNet.tflite",
       "size_mb": 2.1,
       "license": "MIT/Apache 2.0 (via sirius-ai)",
-      "intended_use": "Primary face recognition and 128-d embedding generation",
+      "intended_use": "Primary face recognition and 192-d embedding generation",
       "accuracy": "99.28% on LFW dataset, ~95%+ on diverse outdoor sets"
     },
     {
